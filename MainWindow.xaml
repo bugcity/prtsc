@@ -20,14 +20,14 @@
       </Grid>
     </Border>
     <Grid Grid.Column="1">
-      <Grid.RowDefinitions><RowDefinition Height="86"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="43"/></Grid.RowDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="43"/></Grid.RowDefinitions>
       <Border Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1">
         <Grid Margin="25,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <StackPanel VerticalAlignment="Center"><TextBlock x:Name="TitleLabel" Text="キャプチャを、伝わる一枚に。" FontWeight="SemiBold" FontSize="19" Foreground="#20263B" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="DetailLabel" Text="撮影して、書き込んで、すぐ共有。" Foreground="#8590A6" Margin="0,5,0,0"/></StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="コピー" ToolTip="Ctrl+C · 注釈を含む画像をコピー" Click="CopyImage"/><Button Content="PNG を保存 ↗" Background="#6366F1" Foreground="White" BorderThickness="0" Click="ExportImage"/></StackPanel>
         </Grid>
       </Border>
-      <Border Grid.Row="1" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1" Padding="18,10">
+      <Border x:Name="EditorToolbar" Grid.Row="1" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1" Padding="12,5">
         <StackPanel>
           <WrapPanel x:Name="Tools">
             <Button Tag="Select" Content="↖ 選択" Click="ChooseTool" ToolTip="V · 注釈の選択・移動・サイズ変更"/>
@@ -38,8 +38,11 @@
             <Button Tag="Highlight" Content="▰  蛍光ペン" Click="ChooseTool" ToolTip="H"/>
             <Button Tag="Text" Content="T  テキスト" Click="ChooseTool" ToolTip="T"/>
             <Button Tag="Number" Content="❶  番号" Click="ChooseTool" ToolTip="N"/>
+            <Button Tag="Crop" Content="✂ トリム" Click="ChooseTool" ToolTip="C · 範囲を指定して切り抜き"/>
+            <Button Content="↶" Click="Undo" ToolTip="Ctrl+Z · 元に戻す" Padding="10,3" VerticalAlignment="Center"/><Button Content="↷" Click="Redo" ToolTip="Ctrl+Y · やり直す" Padding="10,3" VerticalAlignment="Center"/>
+            <Button Content="画像を削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3" VerticalAlignment="Center"/>
           </WrapPanel>
-          <WrapPanel Margin="3,7,0,0" VerticalAlignment="Center">
+          <WrapPanel Margin="3,2,0,0" VerticalAlignment="Center">
             <TextBlock Text="色" Margin="0,0,8,0" Foreground="#8590A6"/>
             <Button Tag="#F43F5E" Background="#F43F5E" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="ローズ"/>
             <Button Tag="#6366F1" Background="#6366F1" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="インディゴ"/>
@@ -50,22 +53,16 @@
             <TextBlock Text="太さ" Margin="18,0,5,0" Foreground="#8590A6"/>
             <Slider x:Name="StrokeSlider" Width="75" Minimum="2" Maximum="12" Value="4" VerticalAlignment="Center" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="StrokeChanged"/>
             <Rectangle x:Name="CurrentColor" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="4" Height="22" Fill="#F43F5E" Margin="12,0,10,0"/>
-            <Button Content="↶" Click="Undo" ToolTip="Ctrl+Z · 元に戻す" Padding="10,3"/><Button Content="↷" Click="Redo" ToolTip="Ctrl+Y · やり直す" Padding="10,3"/>
-            <Button x:Name="EditTextButton" Content="文字を編集" Click="EditSelectedText" IsEnabled="False" Padding="10,3"/>
-            <Button x:Name="DeleteMarkButton" Content="注釈を削除" Click="DeleteSelected" IsEnabled="False" Padding="10,3"/>
-            <Button Content="画像を削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3"/>
-          </WrapPanel>
-          <WrapPanel Margin="6,9,0,0">
-            <TextBlock Text="矢印スタイル" Foreground="#8590A6" Margin="0,0,10,0"/>
-            <ComboBox x:Name="ArrowStyleBox" Width="215" SelectedValuePath="Key" SelectionChanged="ArrowStyleChanged" VerticalContentAlignment="Center" ToolTip="新しい矢印のスタイル、または選択中の矢印のスタイルを変更">
+            <TextBlock Text="矢印" Foreground="#8590A6" Margin="5,0,8,0"/>
+            <ComboBox x:Name="ArrowStyleBox" Width="215" SelectedValuePath="Key" SelectionChanged="ArrowStyleChanged" VerticalContentAlignment="Center" ToolTip="矢印スタイル · 新規または選択中の矢印に適用" Margin="0,0,8,0">
               <ComboBox.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal"><Image Source="{Binding Preview}" Width="76" Height="27" Margin="0,0,12,0"/><TextBlock Text="{Binding Name}"/></StackPanel></DataTemplate></ComboBox.ItemTemplate>
             </ComboBox>
-            <TextBlock Text="描いた後も選択して変更できます" Foreground="#8590A6" FontSize="11" Margin="14,0,0,0"/>
+            <Button x:Name="EditTextButton" Content="文字を編集" Click="EditSelectedText" IsEnabled="False" Padding="10,3"/>
+            <Button x:Name="DeleteMarkButton" Content="注釈を削除" Click="DeleteSelected" IsEnabled="False" Padding="10,3"/>
           </WrapPanel>
-          <TextBlock x:Name="SelectionLabel" Text="V で注釈を選択 · ドラッグで移動 · 文字はダブルクリックで編集" Foreground="#8590A6" FontSize="11" Margin="6,8,0,0"/>
         </StackPanel>
       </Border>
-      <Grid Grid.Row="2" Margin="28">
+      <Grid x:Name="EditorViewport" Grid.Row="2" Margin="12" SizeChanged="ViewportChanged">
         <Border x:Name="EmptyState" Background="White" CornerRadius="16" BorderBrush="#E2E8F0" BorderThickness="1">
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
             <Border Background="#EEF0FF" CornerRadius="20" Width="84" Height="84" HorizontalAlignment="Center"><TextBlock Text="▣" FontSize="44" Foreground="#6366F1" HorizontalAlignment="Center"/></Border>
@@ -75,11 +72,19 @@
             <TextBlock Text="画像の貼り付けにも対応 · Ctrl + V" Foreground="#A1AABC" FontSize="11" HorizontalAlignment="Center" Margin="0,18,0,0"/>
           </StackPanel>
         </Border>
-        <Viewbox x:Name="ImageView" Visibility="Collapsed" Stretch="Uniform">
-          <Canvas x:Name="Editor" Background="White" ClipToBounds="True" Cursor="Cross" MouseLeftButtonDown="BeginDraw" MouseMove="MoveDraw" MouseLeftButtonUp="EndDraw" LostMouseCapture="LostCapture"/>
-        </Viewbox>
+        <ScrollViewer x:Name="ImageView" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" CanContentScroll="False" PreviewMouseWheel="ZoomWheel">
+          <Border Padding="16"><Canvas x:Name="Editor" Background="White" ClipToBounds="True" Cursor="Cross" MouseLeftButtonDown="BeginDraw" MouseMove="MoveDraw" MouseLeftButtonUp="EndDraw" LostMouseCapture="LostCapture">
+            <Canvas.LayoutTransform><ScaleTransform x:Name="EditorScale" ScaleX="1" ScaleY="1"/></Canvas.LayoutTransform>
+          </Canvas></Border>
+        </ScrollViewer>
+        <Border x:Name="CropActions" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Background="White" CornerRadius="8" BorderBrush="#CBD5E1" BorderThickness="1" Padding="7" Margin="0,6,0,0">
+          <StackPanel Orientation="Horizontal"><TextBlock Text="範囲をドラッグ" Margin="8,0,10,0" Foreground="#64748B"/><Button x:Name="ApplyCropButton" Content="適用" Click="ApplyCropClick" Background="#6366F1" Foreground="White" IsEnabled="False"/><Button Content="キャンセル" Click="CancelCropClick"/></StackPanel>
+        </Border>
       </Grid>
-      <Border Grid.Row="3" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,1,0,0"><Grid Margin="25,0"><TextBlock x:Name="StatusLabel" Text="準備完了" Foreground="#8590A6" FontSize="11"/><TextBlock Text="PRTSC / LOCAL WORKSPACE" Foreground="#A1AABC" FontSize="10" HorizontalAlignment="Right"/></Grid></Border>
+      <Border Grid.Row="3" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,1,0,0"><Grid Margin="15,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center"><TextBlock x:Name="StatusLabel" Text="準備完了" Foreground="#8590A6" FontSize="11" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="SelectionLabel" Text="V で選択 · ダブルクリックで文字を編集" Foreground="#8590A6" FontSize="11" TextTrimming="CharacterEllipsis"/></StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="−" Click="ZoomOut" Padding="10,3" Height="30" ToolTip="縮小 · Ctrl+マウスホイール"/><TextBlock x:Name="ZoomLabel" Text="100%" Width="52" TextAlignment="Center" Foreground="#64748B"/><Button Content="＋" Click="ZoomIn" Padding="10,3" Height="30" ToolTip="拡大 · Ctrl+マウスホイール"/><Button Content="100%" Click="ZoomActual" Padding="10,3" Height="30" ToolTip="原寸で表示"/><Button Content="全体" Click="ZoomFit" Padding="10,3" Height="30" ToolTip="画像全体を表示"/></StackPanel>
+      </Grid></Border>
     </Grid>
   </Grid>
 </Window>

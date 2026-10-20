@@ -174,8 +174,10 @@ internal static class SelfTest
             // The files must be unlocked after loading so deletion works on Windows.
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
             LibraryFeaturesTests.Run(Path.Combine(root, "library-tests"), image);
+            EditorPreferencesTests.Run(Path.Combine(root, "editor-tests"), image);
+            CropAndZoomTests.Run(Path.Combine(root, "crop-tests"), image);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: persistent retention limits/oldest deletion/unlimited/restart, selected capture eviction, safe deletion paths, full-resolution annotated drag data, immutable drag snapshots and expiry, drag gesture thresholds, settings validation/layout, tray restoration/exit, 9 arrow styles, annotation re-editing, clipboard output, gallery copy, notification fade, icon resources, unlocked deletion.");
+        File.WriteAllText("self-test-result.txt", "PASS: display-only zoom, lossless crop pixels/text layout, crop persistence/Undo/Redo/cancel/editing, cropped clipboard and drag exports, original preservation, compact toolbar/control sizes, stroke width preferences, pen resizing, retention, safe drag snapshots, tray restoration/exit, arrow styles, notification fade.");
     }
 }

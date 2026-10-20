@@ -41,6 +41,10 @@ public partial class MainWindow : Window
     private string tool = "Arrow", color = "#F43F5E";
     private string arrowStyle = "Tapered";
     private bool capturing;
+    private bool fitToView = true, cropping;
+    private double displayZoom = 1;
+    private Point cropStart;
+    private CropRegion? cropDraft;
     private HwndSource? hwndSource;
     private IntPtr hwnd;
     private const int HotkeyId = 4812;
@@ -51,8 +55,9 @@ public partial class MainWindow : Window
         settingsStore = new CaptureSettingsStore(Path.Combine(store.Root, "settings.json")); settings = settingsStore.Load();
         dragExport = new CaptureDragExport(store);
         copyToClipboard = clipboardWriter ?? ImageClipboard.CopyAsync; this.enableShell = enableShell;
-        InitializeComponent();
-        syncingSelection = true; ArrowStyleBox.ItemsSource = ArrowStyles.Options; ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = false;
+        syncingSelection = true; InitializeComponent();
+        StrokeSlider.Value = settings.StrokeWidth;
+        ArrowStyleBox.ItemsSource = ArrowStyles.Options; ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = false;
         entries = new(store.Load()); History.ItemsSource = entries;
         historyDrag = new ThumbnailDrag(dragExport.Create, ex => StatusLabel.Text = "ドラッグできませんでした · " + ex.Message); historyDrag.Attach(History);
         Run(() => { dragExport.Cleanup(); EnforceCaptureLimit(); });
@@ -137,7 +142,12 @@ public partial class MainWindow : Window
                 try { await CopyEntryAsync(entry); copied = true; }
                 catch (Exception ex) { StatusLabel.Text = "保存しました。コピーはギャラリーから再試行できます · " + ex.Message; }
                 if (closing) return;
-                HideToTray();
+                if (restoreEditor)
+                {
+                    if (current is null) History.SelectedItem = entry;
+                    ShowEditor();
+                }
+                else HideToTray();
                 toast = new CaptureToast(entry, copied, () => OpenEntry(entry));
                 var activeToast = toast;
                 toast.Closed += (_, _) => { if (toast == activeToast) toast = null; };
@@ -191,7 +201,7 @@ public partial class MainWindow : Window
         toast?.Close(); gallery?.Hide();
     }
     internal Task CopyEntryAsync(CaptureEntry entry)
-        => copyToClipboard(AnnotationRenderer.Render(store.Original(entry), entry.Marks));
+        => copyToClipboard(AnnotationRenderer.Render(store.Original(entry), entry.Marks, entry.Crop));
     internal CaptureEntry AddCapture(BitmapSource bitmap, string title, bool select = true)
     {
         var entry = new CaptureEntry { Title = title };
@@ -214,7 +224,7 @@ public partial class MainWindow : Window
     }
     internal void ApplyCaptureLimit(int limit)
     {
-        var next = new CaptureSettings { MaxCaptures = limit }; settingsStore.Save(next); settings = next;
+        var next = settings with { MaxCaptures = limit }; settingsStore.Save(next); settings = next;
         EnforceCaptureLimit(); StatusLabel.Text = limit == 0 ? "保存枚数：無制限" : $"保存枚数：最大 {limit} 枚";
     }
     private void EnforceCaptureLimit()
@@ -227,14 +237,14 @@ public partial class MainWindow : Window
     }
     private void HistoryChanged(object sender, SelectionChangedEventArgs e)
     {
-        draft = null; moving = false; selectionDraft = null; selectedIndex = -1; Editor.ReleaseMouseCapture();
+        draft = null; moving = false; cropping = false; cropDraft = null; fitToView = true; selectionDraft = null; selectedIndex = -1; Editor.ReleaseMouseCapture();
         current = History.SelectedItem as CaptureEntry;
         document = current is null ? null : new AnnotationDocument(current); UpdateSelectionControls();
-        if (current is null) { original = null; ImageView.Visibility = Visibility.Collapsed; EmptyState.Visibility = Visibility.Visible; TitleLabel.Text = "キャプチャを、伝わる一枚に。"; DetailLabel.Text = "撮影して、書き込んで、すぐ共有。"; return; }
+        if (current is null) { original = null; CropActions.Visibility = Visibility.Collapsed; ImageView.Visibility = Visibility.Collapsed; EmptyState.Visibility = Visibility.Visible; TitleLabel.Text = "キャプチャを、伝わる一枚に。"; DetailLabel.Text = "撮影して、書き込んで、すぐ共有。"; return; }
         Run(() =>
         {
             original = store.Original(current); TitleLabel.Text = current.Title;
-            DetailLabel.Text = $"{original.PixelWidth:N0} × {original.PixelHeight:N0} px  ·  {current.Created:yyyy/MM/dd HH:mm}";
+            UpdateImageDetail();
             EmptyState.Visibility = Visibility.Collapsed; ImageView.Visibility = Visibility.Visible; Redraw();
             StatusLabel.Text = "注釈は自動保存されます · A 矢印 / R 四角 / T 文字";
         });
@@ -242,30 +252,106 @@ public partial class MainWindow : Window
     private void Redraw()
     {
         if (original is null || current is null) return;
-        AnnotationRenderer.Draw(Editor, original, current.Marks.Select((mark, i) => i == selectedIndex && selectionDraft is not null ? selectionDraft : mark));
-        if (draft is not null) AnnotationRenderer.Add(Editor, draft);
-        if (selectedIndex >= 0 && selectedIndex < current.Marks.Count) AnnotationSelection.Draw(Editor, selectedIndex, selectionDraft ?? current.Marks[selectedIndex]);
+        AnnotationRenderer.Draw(Editor, original, current.Marks.Select((mark, i) => i == selectedIndex && selectionDraft is not null ? selectionDraft : mark), current.Crop);
+        if (draft is not null) AnnotationRenderer.Add(Editor, ImageCrop.DisplayMark(draft, current.Crop), Math.Max(1, original.PixelWidth - draft.X));
+        if (selectedIndex >= 0 && selectedIndex < current.Marks.Count) AnnotationSelection.Draw(Editor, selectedIndex, ImageCrop.DisplayMark(selectionDraft ?? current.Marks[selectedIndex], current.Crop));
+        CropActions.Visibility = tool == "Crop" ? Visibility.Visible : Visibility.Collapsed;
+        ApplyCropButton.IsEnabled = cropDraft is { Width: > 0, Height: > 0 };
+        if (tool == "Crop" && cropDraft is not null) DrawCropOverlay(cropDraft);
+        if (fitToView) FitDisplay();
     }
     private void Commit()
     {
         if (current is null || original is null) return;
         Redraw();
-        Run(() => { store.Save(current, AnnotationRenderer.Render(original, current.Marks)); StatusLabel.Text = "保存済み · " + current.Marks.Count + " 件の注釈"; });
+        Run(() => { store.Save(current, AnnotationRenderer.Render(original, current.Marks, current.Crop)); UpdateImageDetail(); StatusLabel.Text = "保存済み · " + current.Marks.Count + " 件の注釈"; });
     }
+    private void UpdateImageDetail()
+    {
+        if (original is null || current is null) return;
+        var bounds = ImageCrop.Bounds(original, current.Crop);
+        DetailLabel.Text = $"{bounds.Width:N0} × {bounds.Height:N0} px  ·  {(current.Crop is null ? "" : "トリム済み · ")}{current.Created:yyyy/MM/dd HH:mm}";
+    }
+    internal void SetDisplayZoom(double scale)
+    {
+        if (!double.IsFinite(scale)) throw new ArgumentOutOfRangeException(nameof(scale));
+        fitToView = false; ApplyDisplayZoom(Math.Clamp(scale, 0.01, 8));
+    }
+    private void ApplyDisplayZoom(double scale)
+    {
+        displayZoom = scale; EditorScale.ScaleX = scale; EditorScale.ScaleY = scale;
+        ZoomLabel.Text = $"{scale * 100:0}%";
+    }
+    private void FitDisplay()
+    {
+        if (original is null || current is null || EditorViewport.ActualWidth <= 34 || EditorViewport.ActualHeight <= 34) return;
+        var bounds = ImageCrop.Bounds(original, current.Crop);
+        ApplyDisplayZoom(Math.Clamp(Math.Min((EditorViewport.ActualWidth - 34) / bounds.Width, (EditorViewport.ActualHeight - 34) / bounds.Height), 0.01, 8));
+    }
+    private void ViewportChanged(object sender, SizeChangedEventArgs e) { if (fitToView) FitDisplay(); }
+    private void ZoomIn(object sender, RoutedEventArgs e) => SetDisplayZoom(displayZoom * 1.25);
+    private void ZoomOut(object sender, RoutedEventArgs e) => SetDisplayZoom(displayZoom / 1.25);
+    private void ZoomActual(object sender, RoutedEventArgs e) => SetDisplayZoom(1);
+    private void ZoomFit(object sender, RoutedEventArgs e) { fitToView = true; FitDisplay(); }
+    private void ZoomWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control || original is null) return;
+        var anchor = e.GetPosition(Editor); var cursor = e.GetPosition(ImageView);
+        SetDisplayZoom(displayZoom * (e.Delta > 0 ? 1.15 : 1 / 1.15)); ImageView.UpdateLayout();
+        var mapped = Editor.TranslatePoint(anchor, ImageView);
+        ImageView.ScrollToHorizontalOffset(ImageView.HorizontalOffset + mapped.X - cursor.X);
+        ImageView.ScrollToVerticalOffset(ImageView.VerticalOffset + mapped.Y - cursor.Y); e.Handled = true;
+    }
+    private int HitTestAnnotation(Point point)
+    {
+        if (current is null) return -1;
+        var offset = new Vector(current.Crop?.X ?? 0, current.Crop?.Y ?? 0);
+        return AnnotationSelection.HitTest(Editor, current.Marks.Select(mark => ImageCrop.DisplayMark(mark, current.Crop)).ToList(), point - offset);
+    }
+    private void DrawCropOverlay(CropRegion crop)
+    {
+        double x = crop.X - (current?.Crop?.X ?? 0), y = crop.Y - (current?.Crop?.Y ?? 0);
+        void Area(double left, double top, double width, double height)
+        {
+            var shade = new System.Windows.Shapes.Rectangle { Width = Math.Max(0, width), Height = Math.Max(0, height), Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(115, 15, 23, 42)), IsHitTestVisible = false };
+            Canvas.SetLeft(shade, left); Canvas.SetTop(shade, top); Editor.Children.Add(shade);
+        }
+        Area(0, 0, Editor.Width, y); Area(0, y + crop.Height, Editor.Width, Editor.Height - y - crop.Height);
+        Area(0, y, x, crop.Height); Area(x + crop.Width, y, Editor.Width - x - crop.Width, crop.Height);
+        var frame = new System.Windows.Shapes.Rectangle { Width = crop.Width, Height = crop.Height, Stroke = Brushes.White, StrokeThickness = 2 / displayZoom, IsHitTestVisible = false };
+        Canvas.SetLeft(frame, x); Canvas.SetTop(frame, y); Editor.Children.Add(frame);
+    }
+    internal void ApplyCrop(CropRegion crop)
+    {
+        if (current is null || original is null || document is null) return;
+        var valid = ImageCrop.Bounds(original, crop); var visible = ImageCrop.Bounds(original, current.Crop);
+        if (valid.X < visible.X || valid.Y < visible.Y || valid.X + valid.Width > visible.X + visible.Width || valid.Y + valid.Height > visible.Y + visible.Height)
+            throw new ArgumentException("現在の表示範囲内でトリムしてください。", nameof(crop));
+        CancelGesture(); document.Crop(crop); selectedIndex = -1; SetTool("Select"); UpdateSelectionControls();
+        fitToView = true; Commit();
+    }
+    private void ApplyCropClick(object sender, RoutedEventArgs e) { if (cropDraft is { Width: > 0, Height: > 0 } crop) Run(() => ApplyCrop(crop)); }
+    private void CancelCropClick(object sender, RoutedEventArgs e) => SetTool("Select");
     private void ChooseTool(object sender, RoutedEventArgs e) => SetTool((string)((Button)sender).Tag);
     private void SetTool(string value)
     {
         CancelGesture();
         tool = value;
-        if (value != "Select") { selectedIndex = -1; UpdateSelectionControls(); Redraw(); }
+        if (value != "Select")
+        {
+            selectedIndex = -1; UpdateSelectionControls();
+            syncingSelection = true; StrokeSlider.Value = settings.StrokeWidth; syncingSelection = false; Redraw();
+        }
         Editor.Cursor = value == "Select" ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.Cross;
         foreach (var button in Tools.Children.OfType<Button>())
         {
-            bool active = (string)button.Tag == value;
+            if (button.Tag is not string tag) continue;
+            bool active = tag == value;
             button.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#EEF0FF" : "#FFFFFF"));
             button.BorderBrush = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#8183F6" : "#E2E8F0"));
         }
         UpdateArrowControls();
+        Redraw();
     }
     private void ChooseColor(object sender, RoutedEventArgs e)
     {
@@ -309,20 +395,27 @@ public partial class MainWindow : Window
     }
     private void StrokeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (syncingSelection || SelectedMark is not { } selected || document is null) return;
+        if (syncingSelection) return;
+        if (settings.StrokeWidth != e.NewValue)
+            Run(() => { var next = settings with { StrokeWidth = e.NewValue }; settingsStore.Save(next); settings = next; });
+        if (SelectedMark is not { } selected || document is null) return;
         document.Change(marks => marks[selectedIndex] = selected with { Width = e.NewValue }); Commit();
     }
     private Point Position(MouseEventArgs e)
     {
-        var p = e.GetPosition(Editor); return new Point(Math.Clamp(p.X, 0, Editor.Width), Math.Clamp(p.Y, 0, Editor.Height));
+        var p = e.GetPosition(Editor); return new Point(Math.Clamp(p.X, 0, Editor.Width) + (current?.Crop?.X ?? 0), Math.Clamp(p.Y, 0, Editor.Height) + (current?.Crop?.Y ?? 0));
     }
     private void BeginDraw(object sender, MouseButtonEventArgs e)
     {
         if (current is null || original is null || document is null) return;
         var point = Position(e);
+        if (tool == "Crop")
+        {
+            cropStart = point; cropping = true; cropDraft = null; Editor.CaptureMouse(); e.Handled = true; return;
+        }
         if (e.ClickCount == 2)
         {
-            selectedIndex = AnnotationSelection.HitTest(Editor, current.Marks, point);
+            selectedIndex = HitTestAnnotation(point);
             SetTool("Select"); UpdateSelectionControls(); Redraw();
             if (SelectedMark?.Tool is "Text" or "Number") EditSelectedText(this, e);
             e.Handled = true; return;
@@ -330,9 +423,9 @@ public partial class MainWindow : Window
         if (tool == "Select")
         {
             dragPart = "Move";
-            if (SelectedMark is { } selected && AnnotationSelection.HasEndpoints(selected) && (point - new Point(selected.X, selected.Y)).Length <= 10) dragPart = "Start";
-            else if (SelectedMark is { } endMark && AnnotationSelection.HasEndpoints(endMark) && (point - new Point(endMark.X2, endMark.Y2)).Length <= 10) dragPart = "End";
-            else selectedIndex = AnnotationSelection.HitTest(Editor, current.Marks, point);
+            if (SelectedMark is { } selected && AnnotationSelection.HasEndpoints(selected) && (point - AnnotationDocument.Endpoints(selected).Start).Length <= 10) dragPart = "Start";
+            else if (SelectedMark is { } endMark && AnnotationSelection.HasEndpoints(endMark) && (point - AnnotationDocument.Endpoints(endMark).End).Length <= 10) dragPart = "End";
+            else selectedIndex = HitTestAnnotation(point);
             UpdateSelectionControls(); Redraw();
             if (SelectedMark is not { } chosen) return;
             moving = true; dragStart = point; dragOriginal = chosen; selectionDraft = chosen;
@@ -355,6 +448,8 @@ public partial class MainWindow : Window
     }
     private void MoveDraw(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if (cropping && original is not null)
+        { cropDraft = ImageCrop.FromPoints(cropStart, Position(e), ImageCrop.Bounds(original, current?.Crop)); Redraw(); return; }
         if (moving && dragOriginal is not null)
         {
             selectionDraft = TransformSelection(Position(e));
@@ -367,6 +462,11 @@ public partial class MainWindow : Window
     }
     private void EndDraw(object sender, MouseButtonEventArgs e)
     {
+        if (cropping && original is not null)
+        {
+            cropDraft = ImageCrop.FromPoints(cropStart, Position(e), ImageCrop.Bounds(original, current?.Crop));
+            cropping = false; Editor.ReleaseMouseCapture(); Redraw(); e.Handled = true; return;
+        }
         if (moving && selectionDraft is not null && document is not null)
         {
             var mark = TransformSelection(Position(e)); moving = false; selectionDraft = null; Editor.ReleaseMouseCapture();
@@ -376,25 +476,27 @@ public partial class MainWindow : Window
         }
         if (draft is null || current is null || document is null) return;
         var p = Position(e); var completed = draft with { X2 = p.X, Y2 = p.Y }; draft = null; Editor.ReleaseMouseCapture();
+        if (completed.Tool == "Pen" && (completed.Points.Count == 0 || (new Point(completed.Points[^1][0], completed.Points[^1][1]) - p).Length > 0.01))
+            completed.Points.Add([p.X, p.Y]);
         if (Math.Abs(completed.X2 - completed.X) + Math.Abs(completed.Y2 - completed.Y) >= 3 || completed.Points.Count > 2)
         { document.Change(marks => marks.Add(completed)); Commit(); }
         else Redraw();
     }
     private Mark TransformSelection(Point position) => dragPart switch
     {
-        "Start" => dragOriginal! with { X = position.X, Y = position.Y },
-        "End" => dragOriginal! with { X2 = position.X, Y2 = position.Y },
+        "Start" => AnnotationDocument.ResizeEndpoint(dragOriginal!, true, position),
+        "End" => AnnotationDocument.ResizeEndpoint(dragOriginal!, false, position),
         _ => AnnotationDocument.Move(dragOriginal!, position - dragStart)
     };
     private void LostCapture(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (draft is null && !moving) return;
-        draft = null; moving = false; selectionDraft = null; Redraw();
+        if (draft is null && !moving && !cropping) return;
+        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; Redraw();
     }
     private void CancelGesture()
     {
-        if (draft is null && !moving) return;
-        draft = null; moving = false; selectionDraft = null; dragOriginal = null;
+        if (draft is null && !moving && !cropping && cropDraft is null) return;
+        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null;
         Editor.ReleaseMouseCapture(); Redraw();
     }
     private string? AskText(string initialText = "")
@@ -417,14 +519,16 @@ public partial class MainWindow : Window
     private void Undo(object? sender, RoutedEventArgs? e)
     {
         CancelGesture();
+        var previousCrop = current?.Crop;
         if (document?.Undo() != true) return;
-        selectedIndex = -1; UpdateSelectionControls(); Commit();
+        selectedIndex = -1; UpdateSelectionControls(); if (current?.Crop != previousCrop) fitToView = true; Commit();
     }
     private void Redo(object? sender, RoutedEventArgs? e)
     {
         CancelGesture();
+        var previousCrop = current?.Crop;
         if (document?.Redo() != true) return;
-        selectedIndex = -1; UpdateSelectionControls(); Commit();
+        selectedIndex = -1; UpdateSelectionControls(); if (current?.Crop != previousCrop) fitToView = true; Commit();
     }
     private void OpenImage(object sender, RoutedEventArgs e)
     {
@@ -449,7 +553,7 @@ public partial class MainWindow : Window
         if (original is null || current is null) return;
         var name = string.Concat(current.Title.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PNG 画像|*.png", FileName = name + ".png", AddExtension = true };
-        if (dialog.ShowDialog(this) == true) Run(() => { CaptureStore.WriteImage(dialog.FileName, AnnotationRenderer.Render(original, current.Marks)); StatusLabel.Text = "保存しました · " + dialog.FileName; });
+        if (dialog.ShowDialog(this) == true) Run(() => { CaptureStore.WriteImage(dialog.FileName, AnnotationRenderer.Render(original, current.Marks, current.Crop)); StatusLabel.Text = "保存しました · " + dialog.FileName; });
     }
     private void DeleteCapture(object sender, RoutedEventArgs e)
     {
@@ -470,15 +574,20 @@ public partial class MainWindow : Window
                 case Key.V: Run(() => { if (Clipboard.GetImage() is { } pasted) AddCapture(pasted, "貼り付け " + DateTime.Now.ToString("HH:mm:ss")); }); break;
                 case Key.S: ExportImage(this, e); break;
                 case Key.O: OpenImage(this, e); break;
+                case Key.D0: ZoomFit(this, e); break;
+                case Key.D1: ZoomActual(this, e); break;
+                case Key.Add: case Key.OemPlus: ZoomIn(this, e); break;
+                case Key.Subtract: case Key.OemMinus: ZoomOut(this, e); break;
                 default: return;
             }
             e.Handled = true;
         }
         else if (Keyboard.Modifiers == ModifierKeys.None)
         {
-            if (e.Key == Key.Escape) { draft = null; moving = false; selectionDraft = null; selectedIndex = -1; Editor.ReleaseMouseCapture(); UpdateSelectionControls(); Redraw(); }
+            if (e.Key == Key.Escape) { CancelGesture(); selectedIndex = -1; if (tool == "Crop") SetTool("Select"); UpdateSelectionControls(); Redraw(); }
+            if (e.Key == Key.Enter && tool == "Crop") { ApplyCropClick(this, e); e.Handled = true; }
             if (e.Key == Key.Delete) { DeleteSelected(this, e); e.Handled = true; }
-            var value = e.Key switch { Key.V => "Select", Key.A => "Arrow", Key.R => "Rectangle", Key.E => "Ellipse", Key.P => "Pen", Key.H => "Highlight", Key.T => "Text", Key.N => "Number", _ => null };
+            var value = e.Key switch { Key.V => "Select", Key.A => "Arrow", Key.R => "Rectangle", Key.E => "Ellipse", Key.P => "Pen", Key.H => "Highlight", Key.T => "Text", Key.N => "Number", Key.C => "Crop", _ => null };
             if (value is not null) SetTool(value);
         }
     }

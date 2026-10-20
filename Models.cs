@@ -26,6 +26,7 @@ public sealed class CaptureEntry : System.ComponentModel.INotifyPropertyChanged
     public string Title { get; set; } = "キャプチャ";
     public DateTime Created { get; set; } = DateTime.Now;
     public List<Mark> Marks { get; set; } = [];
+    public CropRegion? Crop { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public BitmapSource? Thumbnail
     {
         get => thumbnail;

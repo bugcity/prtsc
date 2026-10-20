@@ -10,13 +10,15 @@ namespace Prtsc;
 
 internal static class AnnotationRenderer
 {
-    public static void Draw(Canvas canvas, BitmapSource original, IEnumerable<Mark> marks)
+    public static void Draw(Canvas canvas, BitmapSource original, IEnumerable<Mark> marks, CropRegion? crop = null)
     {
-        canvas.Children.Clear(); canvas.Width = original.PixelWidth; canvas.Height = original.PixelHeight;
-        canvas.Children.Add(new System.Windows.Controls.Image { Source = original, Width = canvas.Width, Height = canvas.Height, Stretch = Stretch.Fill, IsHitTestVisible = false });
-        foreach (var mark in marks) Add(canvas, mark);
+        var bounds = ImageCrop.Bounds(original, crop);
+        canvas.Children.Clear(); canvas.Width = bounds.Width; canvas.Height = bounds.Height;
+        BitmapSource source = crop is null ? original : new CroppedBitmap(original, bounds);
+        canvas.Children.Add(new System.Windows.Controls.Image { Source = source, Width = canvas.Width, Height = canvas.Height, Stretch = Stretch.Fill, IsHitTestVisible = false });
+        foreach (var mark in marks) Add(canvas, ImageCrop.DisplayMark(mark, crop), Math.Max(1, original.PixelWidth - mark.X));
     }
-    public static void Add(Canvas canvas, Mark mark)
+    public static void Add(Canvas canvas, Mark mark, double? textMaxWidth = null)
     {
         var brush = (Brush)new BrushConverter().ConvertFromString(mark.Color)!;
         double x = Math.Min(mark.X, mark.X2), y = Math.Min(mark.Y, mark.Y2);
@@ -30,7 +32,7 @@ internal static class AnnotationRenderer
             case "Pen":
                 shape = new Polyline { Points = new PointCollection(mark.Points.Select(p => new Point(p[0], p[1]))), Stroke = brush, StrokeThickness = mark.Width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round }; break;
             case "Text":
-                shape = new TextBlock { Text = mark.Text, Foreground = brush, FontSize = Math.Max(18, mark.Width * 6), FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, MaxWidth = Math.Max(1, canvas.Width - mark.X) };
+                shape = new TextBlock { Text = mark.Text, Foreground = brush, FontSize = Math.Max(18, mark.Width * 6), FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, MaxWidth = textMaxWidth ?? Math.Max(1, canvas.Width - mark.X) };
                 Canvas.SetLeft(shape, mark.X); Canvas.SetTop(shape, mark.Y); break;
             case "Number":
                 double size = Math.Max(32, mark.Width * 9);
@@ -45,12 +47,12 @@ internal static class AnnotationRenderer
         }
         shape.IsHitTestVisible = false; canvas.Children.Add(shape);
     }
-    public static BitmapSource Render(BitmapSource original, IEnumerable<Mark> marks)
+    public static BitmapSource Render(BitmapSource original, IEnumerable<Mark> marks, CropRegion? crop = null)
     {
         var canvas = new Canvas { ClipToBounds = true, Background = Brushes.White };
-        Draw(canvas, original, marks);
+        Draw(canvas, original, marks, crop);
         canvas.Measure(new System.Windows.Size(canvas.Width, canvas.Height)); canvas.Arrange(new Rect(0, 0, canvas.Width, canvas.Height)); canvas.UpdateLayout();
-        var bitmap = new RenderTargetBitmap(original.PixelWidth, original.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap((int)canvas.Width, (int)canvas.Height, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(canvas); bitmap.Freeze(); return bitmap;
     }
 }

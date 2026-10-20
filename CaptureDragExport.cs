@@ -16,7 +16,7 @@ internal sealed class CaptureDragExport(CaptureStore store)
         if (title.Length == 0) title = "capture";
         // Prefix avoids Windows device names; unique files preserve earlier drag snapshots after later edits.
         var path = Path.Combine(Root, $"prtsc-{Guid.NewGuid():N}-{title}.png");
-        var image = AnnotationRenderer.Render(store.Original(entry), entry.Marks);
+        var image = AnnotationRenderer.Render(store.Original(entry), entry.Marks, entry.Crop);
         CaptureStore.WriteImage(path, image);
         var data = new DataObject(); data.SetData(DataFormats.FileDrop, new[] { path });
         data.SetData(DataFormats.Bitmap, BitmapFrame.Create(image)); data.SetData(CaptureIdFormat, entry.Id);
