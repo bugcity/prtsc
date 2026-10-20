@@ -25,17 +25,7 @@ internal static class AnnotationRenderer
         switch (mark.Tool)
         {
             case "Arrow":
-                double angle = Math.Atan2(mark.Y2 - mark.Y, mark.X2 - mark.X);
-                double length = Math.Min(Math.Max(15, mark.Width * 4), Math.Sqrt(width * width + height * height) * 0.55);
-                var geometry = new StreamGeometry();
-                using (var context = geometry.Open())
-                {
-                    context.BeginFigure(new Point(mark.X, mark.Y), false, false); context.LineTo(new Point(mark.X2, mark.Y2), true, false);
-                    context.BeginFigure(new Point(mark.X2 - length * Math.Cos(angle - 0.48), mark.Y2 - length * Math.Sin(angle - 0.48)), false, false);
-                    context.LineTo(new Point(mark.X2, mark.Y2), true, false);
-                    context.LineTo(new Point(mark.X2 - length * Math.Cos(angle + 0.48), mark.Y2 - length * Math.Sin(angle + 0.48)), true, false);
-                }
-                shape = new System.Windows.Shapes.Path { Data = geometry, Stroke = brush, StrokeThickness = mark.Width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round };
+                shape = ArrowStyles.Create(mark);
                 break;
             case "Pen":
                 shape = new Polyline { Points = new PointCollection(mark.Points.Select(p => new Point(p[0], p[1]))), Stroke = brush, StrokeThickness = mark.Width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round }; break;

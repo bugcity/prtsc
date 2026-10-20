@@ -7,6 +7,7 @@ namespace Prtsc;
 public sealed record Mark
 {
     public string Tool { get; init; } = "Arrow";
+    public string ArrowStyle { get; init; } = "Open";
     public string Color { get; init; } = "#F43F5E";
     public double Width { get; init; } = 4;
     public double X { get; init; }
@@ -17,13 +18,19 @@ public sealed record Mark
     public List<double[]> Points { get; init; } = [];
 }
 
-public sealed class CaptureEntry
+public sealed class CaptureEntry : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    private BitmapSource? thumbnail;
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Title { get; set; } = "キャプチャ";
     public DateTime Created { get; set; } = DateTime.Now;
     public List<Mark> Marks { get; set; } = [];
-    [System.Text.Json.Serialization.JsonIgnore] public BitmapSource? Thumbnail { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public BitmapSource? Thumbnail
+    {
+        get => thumbnail;
+        set { thumbnail = value; PropertyChanged?.Invoke(this, new(nameof(Thumbnail))); }
+    }
     [System.Text.Json.Serialization.JsonIgnore] public string Caption => Created.ToString("MM/dd  HH:mm");
 }
 

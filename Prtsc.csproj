@@ -7,7 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Prtsc.ico</ApplicationIcon>
     <AssemblyName>Prtsc</AssemblyName>
     <RootNamespace>Prtsc</RootNamespace>
   </PropertyGroup>
+  <ItemGroup><Resource Include="Assets\Prtsc.ico"/></ItemGroup>
 </Project>

@@ -14,6 +14,7 @@ public partial class App : System.Windows.Application
             catch (Exception ex) { System.IO.File.WriteAllText("self-test-error.txt", ex.ToString()); Shutdown(1); }
             return;
         }
-        new MainWindow().Show();
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        MainWindow = new MainWindow(); MainWindow.Show();
     }
 }

@@ -25,6 +25,7 @@ internal static class SelfTest
         Check(WindowCapture.CropBounds(new System.Drawing.Rectangle(100, 50, 640, 480), desktopBounds) == new Int32Rect(2020, 250, 640, 480), "Window crop must offset screen pixels into the virtual desktop bitmap");
         Check(WindowCapture.CropBounds(new System.Drawing.Rectangle(5000, 0, 640, 480), desktopBounds).IsEmpty, "Off-screen windows must not produce an invalid crop");
         var image = BitmapSource.Create(640, 360, 96, 96, PixelFormats.Bgr32, null, Enumerable.Repeat((byte)240, 640 * 360 * 4).ToArray(), 640 * 4);
+        ArrowStyleTests.Run(image);
         List<Mark> marks = [];
         string[] tools = ["Arrow", "Rectangle", "Ellipse", "Pen", "Highlight", "Text", "Number"];
         for (int i = 0; i < tools.Length; i++) marks.Add(new Mark { Tool = tools[i], X = 30 + i * 75, Y = 70, X2 = 90 + i * 75, Y2 = 180, Text = tools[i] == "Number" ? "1" : "テスト", Points = [[250, 250], [300, 230], [350, 260]] });
@@ -41,7 +42,9 @@ internal static class SelfTest
             var loaded = store.Load(); Check(loaded.Count == 1 && loaded[0].Marks.Count == 7, "Annotation persistence failed");
             Check(loaded[0].Marks[3].Points.Count == 3, "Pen points not restored");
             Check(store.Original(entry).PixelWidth == 640, "Original lost");
-            var window = new MainWindow(store);
+            BitmapSource? clipboardImage = null;
+            int clipboardCopies = 0;
+            var window = new MainWindow(store, bitmap => { clipboardImage = bitmap; clipboardCopies++; return Task.CompletedTask; }, false);
             var surface = (System.Windows.FrameworkElement)window.Content;
             surface.Measure(new System.Windows.Size(1280, 800));
             surface.Arrange(new Rect(0, 0, 1280, 800)); surface.UpdateLayout();
@@ -57,19 +60,93 @@ internal static class SelfTest
             }
             void Click(string label) => Buttons(surface).Single(b => b.Content as string == label).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Check(Buttons(surface).Any(b => b.Content as string == "▣  ウィンドウを選択して撮影"), "Window capture must be accessible from the sidebar");
-            Click("↶");
-            Check(store.Load()[0].Marks.Count == 6, "Undo must persist the changed document");
-            Click("↷");
-            Check(store.Load()[0].Marks.Count == 7, "Redo must survive the history thumbnail refresh");
-            var preview = new RenderTargetBitmap(1280, 800, 96, 96, PixelFormats.Pbgra32);
-            preview.Render(surface);
-            Directory.CreateDirectory("artifacts"); CaptureStore.WriteImage(Path.Combine("artifacts", "editor-preview.png"), preview);
+            window.SelectAnnotation(0);
+            Buttons(surface).Single(b => b.Tag as string == "#0EA5E9").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Check(store.Load()[0].Marks[0].Color == "#0EA5E9", "Changing a selected annotation must persist its new color");
+            Click("↶"); Check(store.Load()[0].Marks[0].Color == "#F43F5E", "Undo must persist the previous color");
+            Click("↷"); Check(store.Load()[0].Marks[0].Color == "#0EA5E9", "Redo must persist an existing annotation edit");
+            window.SelectAnnotation(0);
+            var arrowStyleBox = (System.Windows.Controls.ComboBox)window.FindName("ArrowStyleBox");
+            arrowStyleBox.SelectedValue = "Tapered";
+            Check(store.Load()[0].Marks[0].ArrowStyle == "Tapered", "Arrow style selection must modify and persist the existing arrow");
+            Click("↶"); Check(store.Load()[0].Marks[0].ArrowStyle == "Open", "Undo must restore the original arrow style");
+            Click("↷"); Check(store.Load()[0].Marks[0].ArrowStyle == "Tapered", "Redo must restore the chosen arrow style");
+            window.SelectAnnotation(5);
+            Check(!arrowStyleBox.IsEnabled, "Arrow styles must not modify selected text annotations");
+            Check(((System.Windows.Controls.Button)window.FindName("EditTextButton")).IsEnabled, "Text loaded from history must be editable");
+            Click("注釈を削除"); Check(store.Load()[0].Marks.Count == 6, "Deleting the selected annotation must persist");
+            Click("↶"); Check(store.Load()[0].Marks.Count == 7, "Undo must restore a deleted annotation");
+            var edited = (CaptureEntry)((System.Windows.Controls.ListBox)window.FindName("History")).SelectedItem;
+            window.CopyEntryAsync(edited).GetAwaiter().GetResult();
+            Check(clipboardImage is { PixelWidth: 640, PixelHeight: 360 } && edited.Marks.Count == 7, "Clipboard copy must produce an image and retain editable marks");
+            byte[] expectedCopy = new byte[after.Length], actualCopy = new byte[after.Length];
+            AnnotationRenderer.Render(store.Original(edited), edited.Marks).CopyPixels(expectedCopy, 640 * 4, 0);
+            clipboardImage!.CopyPixels(actualCopy, 640 * 4, 0);
+            Check(expectedCopy.SequenceEqual(actualCopy), "Clipboard image must contain all saved edits and exclude selection handles");
+            window.SelectAnnotation(0); surface.UpdateLayout();
+            var editorCanvas = (System.Windows.Controls.Canvas)window.FindName("Editor");
+            Check(AnnotationSelection.HitTest(editorCanvas, edited.Marks, new System.Windows.Point(45, 97.5)) == 0, "Arrow shaft must be selectable");
+            Check(!AnnotationSelection.Bounds(editorCanvas, 5).IsEmpty, "Text selection bounds must be measurable");
+            Directory.CreateDirectory("artifacts");
+            static void Preview(FrameworkElement element, double width, double height, string path)
+            {
+                element.Measure(new System.Windows.Size(width, height)); element.Arrange(new Rect(0, 0, width, height)); element.UpdateLayout();
+                var bitmap = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+                if (element.Parent is Window parent)
+                {
+                    var backdrop = new DrawingVisual(); using (var drawing = backdrop.RenderOpen()) drawing.DrawRectangle(parent.Background, null, new Rect(0, 0, width, height));
+                    bitmap.Render(backdrop);
+                }
+                bitmap.Render(element);
+                CaptureStore.WriteImage(Path.Combine("artifacts", path), bitmap);
+            }
+            Preview(surface, 1280, 800, "editor-preview.png");
+            var dialog = new TextDialog("複数行のテキスト\n再編集できます。");
+            var dialogContent = (FrameworkElement)dialog.Content;
+            dialogContent.Measure(new System.Windows.Size(396, double.PositiveInfinity));
+            double dialogHeight = Math.Ceiling(dialogContent.DesiredSize.Height);
+            dialogContent.Arrange(new Rect(0, 0, 396, dialogHeight)); dialogContent.UpdateLayout();
+            var buttonBounds = dialog.AcceptButton.TransformToAncestor(dialogContent).TransformBounds(new Rect(dialog.AcceptButton.RenderSize));
+            Check(buttonBounds.Bottom <= dialogContent.ActualHeight && buttonBounds.Right <= dialogContent.ActualWidth, "Text dialog action must fit inside its auto-sized content");
+            Check(dialog.Input.Text.Contains("再編集") && dialog.AcceptButton.Content as string == "更新", "Edit dialog must preserve existing text");
+            Preview(dialogContent, 396, dialogHeight, "text-dialog-preview.png"); dialog.Close();
+            var gallery = new GalleryWindow(new System.Collections.ObjectModel.ObservableCollection<CaptureEntry>([edited]), window.CopyEntryAsync, _ => { }, () => { });
+            var galleryContent = (FrameworkElement)gallery.Content;
+            Preview(galleryContent, 780, 550, "gallery-preview.png");
+            Buttons(galleryContent).Single(b => b.Content as string == "コピー").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Check(clipboardCopies == 2, "Gallery copy button must copy a past capture without changing the editor"); gallery.Close();
+            int opened = 0;
+            var toast = new CaptureToast(edited, true, () => opened++);
+            Preview((FrameworkElement)toast.Content, 326, 240, "toast-preview.png");
+            toast.OpenEditor(); toast.OpenEditor(); Check(opened == 1 && CaptureToast.Lifetime == TimeSpan.FromSeconds(3), "Capture notification must open editing only once and fade over three seconds");
+            static void Pump(int milliseconds)
+            {
+                var frame = new System.Windows.Threading.DispatcherFrame();
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };
+                timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; }; timer.Start();
+                System.Windows.Threading.Dispatcher.PushFrame(frame);
+            }
+            var fading = new CaptureToast(edited, true, () => { }); bool expired = false;
+            fading.Closed += (_, _) => expired = true; fading.StartFade(); Pump(1500);
+            Check(fading.Opacity > 0.2 && fading.Opacity < 0.8, "Capture preview opacity must decrease gradually halfway through the fade");
+            Pump(1800); Check(expired, "Capture preview must close after the three-second fade");
+            var doc = new AnnotationDocument(edited);
+            var previous = edited.Marks[3]; var moved = AnnotationDocument.Move(previous, new Vector(20, -10));
+            doc.Change(list => list[3] = moved);
+            Check(edited.Marks[3].Points[0][0] == previous.Points[0][0] + 20 && previous.Points[0][0] == 250, "Moving a pen must preserve original point data");
+            doc.Change(list => list[5] = list[5] with { Text = "変更したテキスト" });
+            doc.Change(list => list[0] = list[0] with { X2 = 200, Y2 = 220 });
+            store.Save(edited, AnnotationRenderer.Render(image, edited.Marks));
+            var reopened = store.Load()[0];
+            Check(reopened.Marks[5].Text == "変更したテキスト" && reopened.Marks[0].X2 == 200 && reopened.Marks[3].Points[0][0] == 270, "Text, arrow endpoints and pen positions must remain editable after reload");
+            Check(doc.Undo() && edited.Marks[0].X2 == 90 && doc.Redo() && edited.Marks[0].X2 == 200, "Resize edits must support undo and redo");
+            using var trayIcon = AppIcon.CreateTrayIcon(); Check(trayIcon.Width == 32, "Tray icon resource must contain a 32px icon");
             Check(surface.ActualWidth == 1280, "Main window layout failed");
             window.Close();
             // The files must be unlocked after loading so deletion works on Windows.
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: region DPI mapping, bounds, window hit testing and z-order, negative desktop origins, clipped window crops, PrtSc label, window capture button, all annotation tools, render dimensions, pixel changes, persistence, original image, main window layout, Undo/Redo persistence, unlocked deletion.");
+        File.WriteAllText("self-test-result.txt", "PASS: 9 distinct arrow styles, tapered tail geometry, directional opacity pixel checks, style persistence and legacy compatibility, arrow selection/degenerate geometry, style selector Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
     }
 }

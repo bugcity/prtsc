@@ -1,5 +1,5 @@
 <Window x:Class="Prtsc.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Prtsc — Capture studio" Width="1280" Height="840" MinWidth="1000" MinHeight="680" Background="#F5F6FA" FontFamily="Yu Gothic UI, Segoe UI" FontSize="13" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop">
+        Title="Prtsc — Capture studio" Icon="Assets/Prtsc.ico" Width="1280" Height="840" MinWidth="1000" MinHeight="680" Background="#F5F6FA" FontFamily="Yu Gothic UI, Segoe UI" FontSize="13" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="OnDrop">
   <Grid Background="#F5F6FA">
     <Grid.ColumnDefinitions><ColumnDefinition Width="264"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#171C2E">
@@ -30,6 +30,7 @@
       <Border Grid.Row="1" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1" Padding="18,10">
         <StackPanel>
           <WrapPanel x:Name="Tools">
+            <Button Tag="Select" Content="↖ 選択" Click="ChooseTool" ToolTip="V · 注釈の選択・移動・サイズ変更"/>
             <Button Tag="Arrow" Content="↗  矢印" Click="ChooseTool" ToolTip="A"/>
             <Button Tag="Rectangle" Content="▢  四角" Click="ChooseTool" ToolTip="R"/>
             <Button Tag="Ellipse" Content="○  丸" Click="ChooseTool" ToolTip="E"/>
@@ -47,11 +48,21 @@
             <Button Tag="#F59E0B" Background="#F59E0B" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="アンバー"/>
             <Button Tag="#1E293B" Background="#1E293B" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="ダーク"/>
             <TextBlock Text="太さ" Margin="18,0,5,0" Foreground="#8590A6"/>
-            <Slider x:Name="StrokeSlider" Width="75" Minimum="2" Maximum="12" Value="4" VerticalAlignment="Center" IsSnapToTickEnabled="True" TickFrequency="1"/>
+            <Slider x:Name="StrokeSlider" Width="75" Minimum="2" Maximum="12" Value="4" VerticalAlignment="Center" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="StrokeChanged"/>
             <Rectangle x:Name="CurrentColor" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="4" Height="22" Fill="#F43F5E" Margin="12,0,10,0"/>
             <Button Content="↶" Click="Undo" ToolTip="Ctrl+Z · 元に戻す" Padding="10,3"/><Button Content="↷" Click="Redo" ToolTip="Ctrl+Y · やり直す" Padding="10,3"/>
-            <Button Content="削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3"/>
+            <Button x:Name="EditTextButton" Content="文字を編集" Click="EditSelectedText" IsEnabled="False" Padding="10,3"/>
+            <Button x:Name="DeleteMarkButton" Content="注釈を削除" Click="DeleteSelected" IsEnabled="False" Padding="10,3"/>
+            <Button Content="画像を削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3"/>
           </WrapPanel>
+          <WrapPanel Margin="6,9,0,0">
+            <TextBlock Text="矢印スタイル" Foreground="#8590A6" Margin="0,0,10,0"/>
+            <ComboBox x:Name="ArrowStyleBox" Width="215" SelectedValuePath="Key" SelectionChanged="ArrowStyleChanged" VerticalContentAlignment="Center" ToolTip="新しい矢印のスタイル、または選択中の矢印のスタイルを変更">
+              <ComboBox.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal"><Image Source="{Binding Preview}" Width="76" Height="27" Margin="0,0,12,0"/><TextBlock Text="{Binding Name}"/></StackPanel></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="描いた後も選択して変更できます" Foreground="#8590A6" FontSize="11" Margin="14,0,0,0"/>
+          </WrapPanel>
+          <TextBlock x:Name="SelectionLabel" Text="V で注釈を選択 · ドラッグで移動 · 文字はダブルクリックで編集" Foreground="#8590A6" FontSize="11" Margin="6,8,0,0"/>
         </StackPanel>
       </Border>
       <Grid Grid.Row="2" Margin="28">
