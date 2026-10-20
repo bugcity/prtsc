@@ -42,7 +42,11 @@ public sealed class CaptureStore
         Root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Prtsc", "Captures");
         Directory.CreateDirectory(Root);
     }
-    public string Folder(CaptureEntry entry) => Path.Combine(Root, entry.Id);
+    public string Folder(CaptureEntry entry)
+    {
+        if (!Guid.TryParseExact(entry.Id, "N", out _)) throw new ArgumentException("キャプチャ ID が不正です。", nameof(entry));
+        return Path.GetFullPath(Path.Combine(Root, entry.Id));
+    }
     public List<CaptureEntry> Load()
     {
         List<CaptureEntry> entries = [];
@@ -51,7 +55,7 @@ public sealed class CaptureStore
             try
             {
                 var entry = JsonSerializer.Deserialize<CaptureEntry>(File.ReadAllText(Path.Combine(folder, "capture.json")));
-                if (entry is null || entry.Id != Path.GetFileName(folder)) continue;
+                if (entry is null || entry.Id != Path.GetFileName(folder) || !Guid.TryParseExact(entry.Id, "N", out _)) continue;
                 entry.Thumbnail = ReadImage(Path.Combine(folder, "preview.png"), 420);
                 entries.Add(entry);
             }

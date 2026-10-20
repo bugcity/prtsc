@@ -8,10 +8,17 @@ public partial class GalleryWindow : Window
     private readonly Func<CaptureEntry, Task> copy;
     private readonly Action<CaptureEntry> edit;
     private readonly Action capture;
-    internal GalleryWindow(ObservableCollection<CaptureEntry> entries, Func<CaptureEntry, Task> copyImage, Action<CaptureEntry> editImage, Action startCapture)
+    private readonly Action? settings;
+    private readonly ThumbnailDrag? thumbnailDrag;
+    internal GalleryWindow(ObservableCollection<CaptureEntry> entries, Func<CaptureEntry, Task> copyImage, Action<CaptureEntry> editImage, Action startCapture, Func<CaptureEntry, DataObject>? export = null, Action? showSettings = null)
     {
         InitializeComponent(); Icon = AppIcon.Source;
-        Cards.ItemsSource = entries; copy = copyImage; edit = editImage; capture = startCapture;
+        Cards.ItemsSource = entries; copy = copyImage; edit = editImage; capture = startCapture; settings = showSettings;
+        if (export is not null)
+        {
+            thumbnailDrag = new ThumbnailDrag(export, ex => GalleryStatus.Text = "ドラッグできませんでした · " + ex.Message);
+            thumbnailDrag.Attach(Cards);
+        }
     }
     private async void CopyClick(object sender, RoutedEventArgs e)
     {
@@ -24,7 +31,10 @@ public partial class GalleryWindow : Window
     }
     private void EditClick(object sender, RoutedEventArgs e)
     {
-        if (((System.Windows.Controls.Button)sender).Tag is CaptureEntry entry) edit(entry);
+        var button = (System.Windows.Controls.Button)sender;
+        if (button.Content is System.Windows.Controls.Image && thumbnailDrag?.SuppressClick == true) return;
+        if (button.Tag is CaptureEntry entry) edit(entry);
     }
     private void CaptureClick(object sender, RoutedEventArgs e) => capture();
+    private void SettingsClick(object sender, RoutedEventArgs e) => settings?.Invoke();
 }

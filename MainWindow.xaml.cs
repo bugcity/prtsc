@@ -18,6 +18,11 @@ public partial class MainWindow : Window
 {
     private readonly CaptureStore store;
     private readonly ObservableCollection<CaptureEntry> entries;
+    private readonly CaptureSettingsStore settingsStore;
+    private CaptureSettings settings;
+    private readonly CaptureDragExport dragExport;
+    private readonly ThumbnailDrag historyDrag;
+    private bool settingsOpen;
     private AnnotationDocument? document;
     private readonly Func<BitmapSource, Task> copyToClipboard;
     private readonly bool enableShell;
@@ -43,10 +48,14 @@ public partial class MainWindow : Window
     public MainWindow(CaptureStore? captureStore = null, Func<BitmapSource, Task>? clipboardWriter = null, bool enableShell = true)
     {
         store = captureStore ?? new CaptureStore();
+        settingsStore = new CaptureSettingsStore(Path.Combine(store.Root, "settings.json")); settings = settingsStore.Load();
+        dragExport = new CaptureDragExport(store);
         copyToClipboard = clipboardWriter ?? ImageClipboard.CopyAsync; this.enableShell = enableShell;
         InitializeComponent();
         syncingSelection = true; ArrowStyleBox.ItemsSource = ArrowStyles.Options; ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = false;
         entries = new(store.Load()); History.ItemsSource = entries;
+        historyDrag = new ThumbnailDrag(dragExport.Create, ex => StatusLabel.Text = "ドラッグできませんでした · " + ex.Message); historyDrag.Attach(History);
+        Run(() => { dragExport.Cleanup(); EnforceCaptureLimit(); });
         CountLabel.Text = $"{entries.Count} 枚";
         if (entries.Count > 0) History.SelectedIndex = 0;
         SetTool("Arrow");
@@ -103,7 +112,7 @@ public partial class MainWindow : Window
     private async void CaptureWindow(object sender, RoutedEventArgs e) => await Capture(CaptureMode.Window);
     private async Task Capture(CaptureMode mode)
     {
-        if (capturing || !IsEnabled || closing) return;
+        if (capturing || settingsOpen || !IsEnabled || closing) return;
         capturing = true;
         bool restoreEditor = IsVisible && WindowState != WindowState.Minimized;
         bool restoreGallery = gallery?.IsVisible == true;
@@ -146,7 +155,7 @@ public partial class MainWindow : Window
     }
     private void ShowEditor()
     {
-        if (closing) return;
+        if (closing || settingsOpen) return;
         restoringEditor = true;
         try
         {
@@ -166,10 +175,10 @@ public partial class MainWindow : Window
     }
     private void ShowGallery()
     {
-        if (capturing || closing || !IsEnabled) return;
+        if (capturing || closing || settingsOpen || !IsEnabled) return;
         if (gallery is null)
         {
-            gallery = new GalleryWindow(entries, CopyEntryAsync, OpenEntry, () => _ = Capture(CaptureMode.Region));
+            gallery = new GalleryWindow(entries, CopyEntryAsync, OpenEntry, () => _ = Capture(CaptureMode.Region), dragExport.Create, () => OpenSettings(this, new RoutedEventArgs()));
             gallery.Closed += (_, _) => gallery = null;
         }
         WindowActivation.Show(gallery); toast?.Close();
@@ -188,8 +197,33 @@ public partial class MainWindow : Window
         var entry = new CaptureEntry { Title = title };
         store.Create(entry, bitmap); entries.Insert(0, entry);
         if (select) History.SelectedItem = entry;
+        EnforceCaptureLimit();
         CountLabel.Text = $"{entries.Count} 枚"; StatusLabel.Text = "キャプチャを保存しました · ドラッグして注釈を追加";
         return entry;
+    }
+    private void OpenSettings(object sender, RoutedEventArgs e)
+    {
+        if (settingsOpen || capturing || closing) return;
+        settingsOpen = true;
+        try
+        {
+            var dialog = new SettingsDialog(settings.MaxCaptures, entries.Count) { Owner = gallery?.IsVisible == true ? gallery : this };
+            if (dialog.ShowDialog() == true) Run(() => ApplyCaptureLimit(dialog.Limit));
+        }
+        finally { settingsOpen = false; }
+    }
+    internal void ApplyCaptureLimit(int limit)
+    {
+        var next = new CaptureSettings { MaxCaptures = limit }; settingsStore.Save(next); settings = next;
+        EnforceCaptureLimit(); StatusLabel.Text = limit == 0 ? "保存枚数：無制限" : $"保存枚数：最大 {limit} 枚";
+    }
+    private void EnforceCaptureLimit()
+    {
+        foreach (var entry in CaptureRetention.Excess(entries, settings.MaxCaptures))
+        {
+            store.Delete(entry); entries.Remove(entry);
+        }
+        CountLabel.Text = $"{entries.Count} 枚";
     }
     private void HistoryChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -400,6 +434,7 @@ public partial class MainWindow : Window
     private void Import(string path) => Run(() => AddCapture(CaptureStore.ReadImage(path), Path.GetFileNameWithoutExtension(path)));
     private void OnDrop(object sender, System.Windows.DragEventArgs e)
     {
+        if (e.Data.GetDataPresent(CaptureDragExport.CaptureIdFormat)) { e.Handled = true; return; }
         if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths)
             foreach (var path in paths.Where(p => new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" }.Contains(Path.GetExtension(p).ToLowerInvariant()))) Import(path);
     }

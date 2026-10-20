@@ -173,8 +173,9 @@ internal static class SelfTest
             window.RequestExit(); Check(closedCount == 1, "Repeated exit requests must be harmless");
             // The files must be unlocked after loading so deletion works on Windows.
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
+            LibraryFeaturesTests.Run(Path.Combine(root, "library-tests"), image);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: repeated minimize-to-tray state restoration (normal/maximized), editor close-to-tray and retained edit state, tray Exit, activation-before-toast-dismissal, 9 arrow styles and directional opacity, style persistence/Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
+        File.WriteAllText("self-test-result.txt", "PASS: persistent retention limits/oldest deletion/unlimited/restart, selected capture eviction, safe deletion paths, full-resolution annotated drag data, immutable drag snapshots and expiry, drag gesture thresholds, settings validation/layout, tray restoration/exit, 9 arrow styles, annotation re-editing, clipboard output, gallery copy, notification fade, icon resources, unlocked deletion.");
     }
 }

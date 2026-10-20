@@ -4,7 +4,7 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <StackPanel><TextBlock Text="キャプチャ・ギャラリー" FontSize="23" FontWeight="SemiBold" Foreground="#20263B"/><TextBlock Text="コピーしてすぐ共有。編集データはそのまま。" Foreground="#8590A6" Margin="0,6,0,0"/></StackPanel>
-      <Button Grid.Column="1" Content="＋ 撮影" Click="CaptureClick" Background="#6366F1" Foreground="White" BorderThickness="0" VerticalAlignment="Center"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="設定" Click="SettingsClick"/><Button Content="＋ 撮影" Click="CaptureClick" Background="#6366F1" Foreground="White" BorderThickness="0"/></StackPanel>
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <ItemsControl x:Name="Cards">
@@ -12,7 +12,7 @@
         <ItemsControl.ItemTemplate><DataTemplate>
           <Border Width="222" Margin="0,0,12,14" Background="White" CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Padding="10">
             <StackPanel>
-              <Button Tag="{Binding}" Click="EditClick" Padding="0" Margin="0" BorderThickness="0" Background="#EEF0F6" ToolTip="クリックして編集">
+              <Button Tag="{Binding}" Click="EditClick" Padding="0" Margin="0" BorderThickness="0" Background="#EEF0F6" ToolTip="クリックで編集 · ドラッグでPNGファイルとして共有">
                 <Image Source="{Binding Thumbnail}" Width="200" Height="126" Stretch="Uniform"/>
               </Button>
               <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" Foreground="#334155" Margin="2,10,0,0"/>
