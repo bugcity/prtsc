@@ -451,9 +451,9 @@ public partial class MainWindow : Window
         var mark = new Mark { Tool = tool, ArrowStyle = arrowStyle, Color = color, Width = StrokeSlider.Value, TextStyle = tool == "Text" ? settings.TextStyle : null, X = point.X, Y = point.Y, X2 = point.X, Y2 = point.Y };
         if (tool == "Text")
         {
-            var text = AskText();
-            if (string.IsNullOrWhiteSpace(text)) return;
-            document.Change(marks => marks.Add(mark with { Text = text })); Commit(); return;
+            var result = AskText(initialStyle: settings.TextStyle, textColor: color);
+            if (result is null) return;
+            document.Change(marks => marks.Add(mark with { Text = result.Value.Text, TextStyle = result.Value.Style })); Commit(); return;
         }
         if (tool == "Number")
         {
@@ -518,16 +518,21 @@ public partial class MainWindow : Window
         draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null; dragSelection = null;
         Editor.ReleaseMouseCapture(); Redraw();
     }
-    private string? AskText(string initialText = "")
+    private (string Text, TextStyle? Style)? AskText(string initialText = "", TextStyle? initialStyle = null, string? textColor = null, bool showFormatting = true)
     {
-        var dialog = new TextDialog(initialText) { Owner = this };
-        return dialog.ShowDialog() == true ? dialog.Input.Text.Trim() : null;
+        var initial = initialStyle ?? settings.TextStyle;
+        var dialog = new TextDialog(initialText, initial, textColor ?? color, showFormatting) { Owner = this };
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Input.Text)) return null;
+        if (dialog.TextFormat is { } format && format != initial) SavePreferences(settings with { TextStyle = format });
+        return (dialog.Input.Text.Trim(), dialog.TextFormat);
     }
     private void EditSelectedText(object sender, RoutedEventArgs e)
     {
         if (SelectedMark is not { } selected || document is null || selected.Tool is not ("Text" or "Number")) return;
-        var text = AskText(selected.Text); if (string.IsNullOrWhiteSpace(text)) return;
-        document.Change(marks => marks[selectedIndex] = selected with { Text = text }); Commit();
+        var initial = selected.TextStyle ?? new TextStyle { Size = Math.Max(18, selected.Width * 6) };
+        var result = AskText(selected.Text, initial, selected.Color, selected.Tool == "Text"); if (result is null) return;
+        var style = selected.TextStyle is null && result.Value.Style == initial ? null : result.Value.Style;
+        document.Change(marks => marks[selectedIndex] = selected with { Text = result.Value.Text, TextStyle = style }); Commit();
     }
     private void DeleteSelected(object sender, RoutedEventArgs e)
     {

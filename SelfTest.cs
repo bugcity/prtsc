@@ -102,6 +102,18 @@ internal static class SelfTest
             }
             Preview(surface, 1280, 800, "editor-preview.png");
             var dialog = new TextDialog("複数行のテキスト\n再編集できます。");
+            var initialDialogContent = (FrameworkElement)dialog.Content;
+            initialDialogContent.Measure(new System.Windows.Size(496, double.PositiveInfinity));
+            initialDialogContent.Arrange(new Rect(0, 0, 496, initialDialogContent.DesiredSize.Height)); initialDialogContent.UpdateLayout();
+            Check(dialog.FormatEditor is not null && dialog.TextFormat?.Size == 24, "Text entry must include editable formatting with existing defaults");
+            dialog.FormatEditor!.SizeBox.SelectedItem = "36";
+            Check(dialog.TextFormat?.Size == 48 && dialog.AcceptButton.IsEnabled, "The text entry dialog must return the chosen point size with the entered text");
+            dialog.FormatEditor.SizeBox.Text = "invalid";
+            Check(!dialog.AcceptButton.IsEnabled, "Invalid text formatting must prevent adding or updating text");
+            dialog.FormatEditor.SizeBox.SelectedItem = "18";
+            dialog.Input.Text = " "; Check(!dialog.AcceptButton.IsEnabled, "Blank text must not commit a new default style");
+            dialog.Input.Text = "複数行のテキスト\n再編集できます。";
+            Check(dialog.AcceptButton.IsEnabled && dialog.TextFormat?.Size == 24, "Valid text and formatting must reenable acceptance");
             var dialogContent = (FrameworkElement)dialog.Content;
             dialogContent.Measure(new System.Windows.Size(396, double.PositiveInfinity));
             double dialogHeight = Math.Ceiling(dialogContent.DesiredSize.Height);
@@ -110,6 +122,8 @@ internal static class SelfTest
             Check(buttonBounds.Bottom <= dialogContent.ActualHeight && buttonBounds.Right <= dialogContent.ActualWidth, "Text dialog action must fit inside its auto-sized content");
             Check(dialog.Input.Text.Contains("再編集") && dialog.AcceptButton.Content as string == "更新", "Edit dialog must preserve existing text");
             Preview(dialogContent, 396, dialogHeight, "text-dialog-preview.png"); dialog.Close();
+            var numberDialog = new TextDialog("3", showFormatting: false);
+            Check(numberDialog.FormatEditor is null && numberDialog.AcceptButton.IsEnabled, "Number editing must preserve its separate sizing and text-only workflow"); numberDialog.Close();
             var gallery = new GalleryWindow(new System.Collections.ObjectModel.ObservableCollection<CaptureEntry>([edited]), window.CopyEntryAsync, _ => { }, () => { });
             var galleryContent = (FrameworkElement)gallery.Content;
             Preview(galleryContent, 780, 550, "gallery-preview.png");

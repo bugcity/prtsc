@@ -13,6 +13,53 @@
         </StackPanel>
         <Grid Grid.Row="2" Margin="8,0,8,12"><TextBlock Text="ライブラリ" Foreground="#A5AEC9" FontWeight="SemiBold"/><TextBlock x:Name="CountLabel" Text="0 枚" Foreground="#8A93B3" HorizontalAlignment="Right"/></Grid>
         <ListBox x:Name="History" Grid.Row="3" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="HistoryChanged">
+          <ListBox.Resources>
+            <Style TargetType="ScrollBar">
+              <Setter Property="Width" Value="12"/>
+              <Setter Property="Margin" Value="4,0,0,0"/>
+              <Setter Property="Background" Value="Transparent"/>
+              <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                      <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True"
+                             Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}"
+                             Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                        <Track.DecreaseRepeatButton>
+                          <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" IsTabStop="False">
+                            <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+                          </RepeatButton>
+                        </Track.DecreaseRepeatButton>
+                        <Track.Thumb>
+                          <Thumb MinHeight="28" Cursor="Hand">
+                            <Thumb.Template>
+                              <ControlTemplate TargetType="Thumb">
+                                <Border x:Name="Grip" Background="#505B7A" Width="6" HorizontalAlignment="Center" CornerRadius="3"/>
+                                <ControlTemplate.Triggers>
+                                  <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="True">
+                                    <Setter TargetName="Grip" Property="Background" Value="#818BAD"/>
+                                    <Setter TargetName="Grip" Property="Width" Value="8"/>
+                                  </DataTrigger>
+                                  <Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Background" Value="#A5A7FF"/></Trigger>
+                                </ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </Thumb.Template>
+                          </Thumb>
+                        </Track.Thumb>
+                        <Track.IncreaseRepeatButton>
+                          <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" IsTabStop="False">
+                            <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+                          </RepeatButton>
+                        </Track.IncreaseRepeatButton>
+                      </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.35"/></Trigger></ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+          </ListBox.Resources>
           <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,10"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Card" CornerRadius="9" BorderThickness="2" BorderBrush="Transparent" Background="#232A40" Padding="9"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Card" Property="BorderBrush" Value="#9294FF"/><Setter TargetName="Card" Property="Background" Value="#303653"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate><DataTemplate><StackPanel><Border Height="104" Background="#111626" CornerRadius="4" ClipToBounds="True"><Image Source="{Binding Thumbnail}" Stretch="Uniform"/></Border><TextBlock Text="{Binding Title}" Foreground="#F0F2FC" TextTrimming="CharacterEllipsis" Margin="2,9,0,0"/><TextBlock Text="{Binding Caption}" Foreground="#98A2BF" FontSize="11" Margin="2,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
         </ListBox>
