@@ -37,7 +37,7 @@ internal sealed class RegionWindow : Window
     private readonly BitmapSource screenshot;
     private readonly IReadOnlyList<WindowTarget> targets;
     private readonly System.Drawing.Rectangle desktopBounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-    private readonly TextBlock hint = new() { Foreground = Brushes.White, FontSize = 15, TextAlignment = TextAlignment.Center };
+    private readonly TextBlock hint = new() { Foreground = Brushes.White, FontSize = 15, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly CaptureLoupe loupe = new();
     private bool windowOnly;
     private WindowTarget? hovered, pressedTarget;
@@ -71,12 +71,21 @@ internal sealed class RegionWindow : Window
         };
         PreviewKeyDown += (_, e) =>
         {
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key is Key.LeftAlt or Key.RightAlt)
+            { Hover(System.Windows.Input.Mouse.GetPosition(surface)); e.Handled = true; return; }
             if (e.Key == Key.Escape) { e.Handled = true; Close(); return; }
             if (e.Key == Key.Tab)
             {
                 dragging = false; surface.ReleaseMouseCapture(); windowOnly = !windowOnly;
                 Hover(System.Windows.Input.Mouse.GetPosition(surface)); e.Handled = true;
             }
+        };
+        PreviewKeyUp += (_, e) =>
+        {
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key is Key.LeftAlt or Key.RightAlt)
+            { Hover(System.Windows.Input.Mouse.GetPosition(surface)); e.Handled = true; }
         };
         surface.MouseLeftButtonDown += (_, e) =>
         {
@@ -102,7 +111,7 @@ internal sealed class RegionWindow : Window
                 var target = windowOnly ? FindTarget(end) : pressedTarget;
                 if (target is null) { Hover(end); return; }
                 rect = WindowCapture.CropBounds(target.Bounds, desktopBounds);
-                SelectedTitle = target.Title;
+                SelectedTitle = target.Title + (target.IsPage ? "（ページ領域）" : "");
             }
             else rect = PixelRect(start, end, surface.ActualWidth, surface.ActualHeight, source.PixelWidth, source.PixelHeight);
             if (rect.Width < 2 || rect.Height < 2) { Hover(end); return; }
@@ -116,7 +125,7 @@ internal sealed class RegionWindow : Window
         if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0) return null;
         int x = desktopBounds.X + (int)Math.Floor(point.X / surface.ActualWidth * screenshot.PixelWidth);
         int y = desktopBounds.Y + (int)Math.Floor(point.Y / surface.ActualHeight * screenshot.PixelHeight);
-        return WindowCapture.At(targets, x, y);
+        return WindowCapture.At(targets, x, y, !Keyboard.Modifiers.HasFlag(ModifierKeys.Alt));
     }
     private void Hover(Point point)
     {
@@ -135,11 +144,11 @@ internal sealed class RegionWindow : Window
     }
     private void UpdateHint()
     {
-        string instructions = windowOnly ? "クリックしてウィンドウを撮影  ·  Tab で範囲選択  ·  Esc で中止"
-            : "ドラッグで範囲を選択 / クリックでウィンドウを撮影  ·  Tab で切替  ·  Esc で中止";
+        string instructions = windowOnly ? "クリックしてウィンドウ / ページ領域を撮影  ·  Alt でウィンドウ全体  ·  Tab で範囲選択  ·  Esc で中止"
+            : "ドラッグで範囲 / クリックでウィンドウ・ページ領域を撮影  ·  Alt でウィンドウ全体  ·  Tab で切替  ·  Esc で中止";
         string title = hovered?.Title ?? "";
         if (title.Length > 60) title = title[..60] + "…";
-        hint.Text = instructions + (title.Length == 0 ? "" : "\n" + title);
+        hint.Text = instructions + (title.Length == 0 ? "" : "\n" + (hovered?.IsPage == true ? "ページ領域 · " : "ウィンドウ · ") + title);
     }
     private void Update(Point end)
     {

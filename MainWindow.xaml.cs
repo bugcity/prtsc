@@ -138,7 +138,8 @@ public partial class MainWindow : Window
         {
             toast?.Close(); gallery?.Hide(); Hide(); await Task.Delay(240);
             if (closing) return;
-            var targets = mode == CaptureMode.FullScreen ? [] : WindowCapture.Enumerate();
+            var targets = mode == CaptureMode.FullScreen ? [] : await WindowCapture.EnumerateTargetsAsync();
+            if (closing) return;
             var desktop = CaptureService.Desktop();
             BitmapSource? result = desktop;
             string? windowTitle = null;

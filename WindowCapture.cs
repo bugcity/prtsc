@@ -6,7 +6,8 @@ namespace Prtsc;
 
 internal enum CaptureMode { Region, Window, FullScreen }
 
-internal sealed record WindowTarget(IntPtr Handle, string Title, System.Drawing.Rectangle Bounds);
+internal sealed record WindowTarget(IntPtr Handle, string Title, System.Drawing.Rectangle Bounds,
+    IReadOnlyList<System.Drawing.Rectangle>? PageBounds = null, bool IsPage = false);
 
 internal static class WindowCapture
 {
@@ -30,8 +31,27 @@ internal static class WindowCapture
         return targets;
     }
 
-    public static WindowTarget? At(IEnumerable<WindowTarget> targets, int screenX, int screenY)
-        => targets.FirstOrDefault(target => target.Bounds.Contains(screenX, screenY));
+    public static async Task<List<WindowTarget>> EnumerateTargetsAsync()
+    {
+        var before = Enumerate();
+        var pages = await BrowserPageCapture.ReadAsync(before);
+        // Providers can take time to initialize. Use fresh z-order and discard regions
+        // if their window moved, resized or changed tabs while discovery was running.
+        return AttachPages(Enumerate(), before, pages);
+    }
+
+    internal static List<WindowTarget> AttachPages(IEnumerable<WindowTarget> current, IReadOnlyList<WindowTarget> before, IReadOnlyList<BrowserPageRegion> pages)
+        => current.Select(window => before.Any(old => old.Handle == window.Handle && old.Bounds == window.Bounds && old.Title == window.Title)
+            ? window with { PageBounds = pages.Where(p => p.Handle == window.Handle.ToInt64()).Select(p => BrowserPageCapture.Clip(p, window.Bounds)).Where(r => r.Width >= 32 && r.Height >= 32).Distinct().ToArray() }
+            : window).ToList();
+
+    public static WindowTarget? At(IEnumerable<WindowTarget> targets, int screenX, int screenY, bool preferPage = true)
+    {
+        var window = targets.FirstOrDefault(target => target.Bounds.Contains(screenX, screenY));
+        if (window is null || !preferPage) return window;
+        var page = window.PageBounds?.FirstOrDefault(bounds => bounds.Contains(screenX, screenY));
+        return page is { Width: > 0, Height: > 0 } ? window with { Bounds = page.Value, PageBounds = null, IsPage = true } : window;
+    }
 
     public static Int32Rect CropBounds(System.Drawing.Rectangle window, System.Drawing.Rectangle desktop)
     {

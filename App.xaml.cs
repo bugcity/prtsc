@@ -13,6 +13,13 @@ public partial class App : System.Windows.Application
     }
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Contains(BrowserPageCapture.WorkerArgument))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            try { Task.Run(BrowserPageCapture.RunWorker).GetAwaiter().GetResult(); Shutdown(0); }
+            catch (Exception) { Shutdown(1); }
+            return;
+        }
         var preferences = new CaptureSettingsStore(System.IO.Path.Combine(CaptureStore.DefaultRoot, "settings.json")).Load();
         System.Windows.Media.RenderOptions.ProcessRenderMode = preferences.RenderingMethod == "Automatic"
             ? System.Windows.Interop.RenderMode.Default : System.Windows.Interop.RenderMode.SoftwareOnly;

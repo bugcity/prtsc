@@ -193,8 +193,9 @@ internal static class SelfTest
             EditingAndShellTests.Run(Path.Combine(root, "editing-shell-tests"), image);
             VideoRecordingTests.Run(Path.Combine(root, "video-tests"));
             MemoryFeaturesTests.Run(Path.Combine(root, "memory-tests"), image);
+            BrowserPageCaptureTests.Run(Path.Combine(root, "browser-page-tests"));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: software rendering defaults/persistence, lazy bounded thumbnails, 10,000-item gallery virtualization, full-session Undo and image release, recording setup/mute defaults, mouse 24/48px transitions, video persistence/drag/deletion and image/video selection, independent text styles and legacy compatibility, group editing/Undo/Redo, drawing preferences, hotkey/startup validation, single-instance wake, capture magnifier, zoom, lossless crop, clipboard/drag exports, compact toolbar, pen resizing, retention, tray restoration, arrow styles and notification fade.");
+        File.WriteAllText("self-test-result.txt", "PASS: browser page hit-testing/overlay, z-order and Alt fallback, stale bounds/iframe filtering, helper timeout/cleanup, software rendering defaults/persistence, lazy bounded thumbnails, 10,000-item gallery virtualization, full-session Undo and image release, recording setup/mute defaults, mouse 24/48px transitions, video persistence/drag/deletion and image/video selection, independent text styles and legacy compatibility, group editing/Undo/Redo, drawing preferences, hotkey/startup validation, single-instance wake, capture magnifier, zoom, lossless crop, clipboard/drag exports, compact toolbar, pen resizing, retention, tray restoration, arrow styles and notification fade.");
     }
 }

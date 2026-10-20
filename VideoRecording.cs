@@ -30,10 +30,12 @@ public partial class MainWindow
             await Task.Delay(240);
             if (exitAfterRecording) return;
             var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+            var targets = dialog.Mode.SelectedIndex == 0 ? await WindowCapture.EnumerateTargetsAsync() : [];
+            if (exitAfterRecording) return;
             var desktop = CaptureService.Desktop(); BitmapSource thumbnail = desktop;
             if (dialog.Mode.SelectedIndex == 0)
             {
-                var selector = new RegionWindow(desktop, WindowCapture.Enumerate()); recordingSetup = selector;
+                var selector = new RegionWindow(desktop, targets); recordingSetup = selector;
                 if (selector.ShowDialog() != true || selector.SelectedBounds is not { } area || exitAfterRecording) return;
                 bounds = new System.Drawing.Rectangle(bounds.X + area.X, bounds.Y + area.Y, area.Width, area.Height); thumbnail = selector.Result!;
                 recordingSetup = null;
