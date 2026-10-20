@@ -115,8 +115,12 @@ internal static class SelfTest
             Preview(galleryContent, 780, 550, "gallery-preview.png");
             Buttons(galleryContent).Single(b => b.Content as string == "コピー").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Check(clipboardCopies == 2, "Gallery copy button must copy a past capture without changing the editor"); gallery.Close();
-            int opened = 0;
-            var toast = new CaptureToast(edited, true, () => opened++);
+            int opened = 0; bool toastDismissed = false;
+            var toast = new CaptureToast(edited, true, () =>
+            {
+                Check(!toastDismissed, "Editor activation must run before dismissing the clicked notification"); opened++;
+            });
+            toast.Closed += (_, _) => toastDismissed = true;
             Preview((FrameworkElement)toast.Content, 326, 240, "toast-preview.png");
             toast.OpenEditor(); toast.OpenEditor(); Check(opened == 1 && CaptureToast.Lifetime == TimeSpan.FromSeconds(3), "Capture notification must open editing only once and fade over three seconds");
             static void Pump(int milliseconds)
@@ -142,11 +146,24 @@ internal static class SelfTest
             Check(doc.Undo() && edited.Marks[0].X2 == 90 && doc.Redo() && edited.Marks[0].X2 == 200, "Resize edits must support undo and redo");
             using var trayIcon = AppIcon.CreateTrayIcon(); Check(trayIcon.Width == 32, "Tray icon resource must contain a 32px icon");
             Check(surface.ActualWidth == 1280, "Main window layout failed");
+            int closedCount = 0; window.Closed += (_, _) => closedCount++;
             window.Close();
+            Check(closedCount == 0 && !window.IsVisible && !window.ShowInTaskbar, "Editor close must hide to tray instead of disposing the resident window");
+            window.SelectAnnotation(0);
+            Check(((System.Windows.Controls.Button)window.FindName("DeleteMarkButton")).IsEnabled, "Editor state must remain usable after closing to tray");
+            int exitRequests = 0;
+            using (var menu = TrayController.CreateMenu(window.Dispatcher, () => { }, () => { }, () => { }, () => { }, () => { exitRequests++; window.RequestExit(); }))
+            {
+                var exitItems = menu.Items.OfType<System.Windows.Forms.ToolStripMenuItem>().Where(item => item.Text == "終了").ToArray();
+                Check(exitItems.Length == 1, "Tray menu must contain one explicit Exit command");
+                exitItems[0].PerformClick(); Pump(20);
+                Check(exitRequests == 1 && closedCount == 1, "Tray Exit must bypass close-to-tray and actually close the editor");
+            }
+            window.RequestExit(); Check(closedCount == 1, "Repeated exit requests must be harmless");
             // The files must be unlocked after loading so deletion works on Windows.
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: 9 distinct arrow styles, tapered tail geometry, directional opacity pixel checks, style persistence and legacy compatibility, arrow selection/degenerate geometry, style selector Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
+        File.WriteAllText("self-test-result.txt", "PASS: editor close-to-tray and retained edit state, tray Exit command and idempotent shutdown, activation-before-toast-dismissal, 9 arrow styles and directional opacity, style persistence/Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
     }
 }

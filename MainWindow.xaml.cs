@@ -24,7 +24,7 @@ public partial class MainWindow : Window
     private TrayController? tray;
     private GalleryWindow? gallery;
     private CaptureToast? toast;
-    private bool closing, syncingSelection, moving;
+    private bool closing, exitRequested, syncingSelection, moving;
     private int selectedIndex = -1;
     private string dragPart = "Move";
     private Point dragStart;
@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             if (!enableShell) return;
-            tray = new TrayController(Dispatcher, ShowGallery, () => _ = Capture(CaptureMode.Region), () => _ = Capture(CaptureMode.Window), ShowEditor, Close);
+            tray = new TrayController(Dispatcher, ShowGallery, () => _ = Capture(CaptureMode.Region), () => _ = Capture(CaptureMode.Window), ShowEditor, RequestExit);
             hwnd = new WindowInteropHelper(this).Handle; hwndSource = HwndSource.FromHwnd(hwnd); hwndSource?.AddHook(WindowMessage);
             if (!RegisterHotKey(hwnd, HotkeyId, 0x4000, 0x2C))
             {
@@ -62,6 +62,11 @@ public partial class MainWindow : Window
             }
         };
         StateChanged += (_, _) => { if (WindowState == WindowState.Minimized && tray is not null) HideToTray(); };
+        Closing += (_, e) =>
+        {
+            if (exitRequested) return;
+            e.Cancel = true; CancelGesture(); HideToTray();
+        };
         Closed += (_, _) =>
         {
             closing = true; toast?.Close(); gallery?.Close(); tray?.Dispose();
@@ -69,6 +74,12 @@ public partial class MainWindow : Window
             if (enableShell) System.Windows.Application.Current.Shutdown();
         };
         PreviewKeyDown += OnKeyDown;
+    }
+    internal void PrepareForShutdown() => exitRequested = true;
+    internal void RequestExit()
+    {
+        if (closing) return;
+        PrepareForShutdown(); Close();
     }
     private IntPtr WindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -93,6 +104,7 @@ public partial class MainWindow : Window
         try
         {
             toast?.Close(); gallery?.Hide(); Hide(); await Task.Delay(240);
+            if (closing) return;
             var targets = mode == CaptureMode.FullScreen ? [] : WindowCapture.Enumerate();
             var desktop = CaptureService.Desktop();
             BitmapSource? result = desktop;
@@ -102,6 +114,7 @@ public partial class MainWindow : Window
                 var overlay = new RegionWindow(desktop, targets, mode == CaptureMode.Window);
                 overlay.ShowDialog(); result = overlay.Result; windowTitle = overlay.SelectedTitle;
             }
+            if (closing) return;
             if (result != null)
             {
                 var entry = AddCapture(result, windowTitle ?? "キャプチャ " + DateTime.Now.ToString("HH:mm:ss"), false);
@@ -122,34 +135,32 @@ public partial class MainWindow : Window
                 if (restoreGallery) { gallery?.Show(); gallery?.Activate(); }
             }
         }
-        catch (Exception ex) { ShowEditor(); MessageBox.Show(this, ex.Message, "撮影に失敗しました", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { if (!closing) { ShowEditor(); MessageBox.Show(this, ex.Message, "撮影に失敗しました", MessageBoxButton.OK, MessageBoxImage.Warning); } }
         finally { capturing = false; }
     }
     private void ShowEditor()
     {
         if (closing) return;
         ShowInTaskbar = true;
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Show();
-        Activate();
+        WindowActivation.Show(this);
     }
     private void HideToTray() { Hide(); ShowInTaskbar = false; }
     private void ShowGallery()
     {
         if (capturing || closing || !IsEnabled) return;
-        toast?.Close();
         if (gallery is null)
         {
             gallery = new GalleryWindow(entries, CopyEntryAsync, OpenEntry, () => _ = Capture(CaptureMode.Region));
             gallery.Closed += (_, _) => gallery = null;
         }
-        if (gallery.WindowState == WindowState.Minimized) gallery.WindowState = WindowState.Normal;
-        gallery.Show(); gallery.Activate();
+        WindowActivation.Show(gallery); toast?.Close();
     }
     private void OpenEntry(CaptureEntry entry)
     {
         if (!entries.Contains(entry)) return;
-        toast?.Close(); gallery?.Hide(); History.SelectedItem = entry; ShowEditor();
+        History.SelectedItem = entry;
+        ShowEditor();
+        toast?.Close(); gallery?.Hide();
     }
     internal Task CopyEntryAsync(CaptureEntry entry)
         => copyToClipboard(AnnotationRenderer.Render(store.Original(entry), entry.Marks));

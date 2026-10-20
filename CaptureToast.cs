@@ -12,7 +12,7 @@ internal sealed class CaptureToast : Window
 {
     internal static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(3);
     private readonly Action edit;
-    private bool opened;
+    private bool opened, dismissed;
     public CaptureToast(CaptureEntry entry, bool copied, Action openEditor)
     {
         edit = openEditor;
@@ -37,7 +37,7 @@ internal sealed class CaptureToast : Window
             SetWindowPos(new WindowInteropHelper(this).Handle, new IntPtr(-1), area.Right - width - 18, area.Bottom - height - 18, width, height, 0x0050);
             StartFade();
         };
-        Closed += (_, _) => BeginAnimation(OpacityProperty, null);
+        Closed += (_, _) => { dismissed = true; BeginAnimation(OpacityProperty, null); };
     }
     internal void StartFade()
     {
@@ -47,7 +47,9 @@ internal sealed class CaptureToast : Window
     internal void OpenEditor()
     {
         if (opened) return;
-        opened = true; Close(); edit();
+        opened = true;
+        try { edit(); }
+        finally { if (!dismissed) Close(); }
     }
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
 }

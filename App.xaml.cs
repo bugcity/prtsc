@@ -4,6 +4,11 @@ namespace Prtsc;
 
 public partial class App : System.Windows.Application
 {
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+        if (!e.Cancel && MainWindow is Prtsc.MainWindow editor) editor.PrepareForShutdown();
+    }
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
