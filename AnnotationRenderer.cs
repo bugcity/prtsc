@@ -32,7 +32,11 @@ internal static class AnnotationRenderer
             case "Pen":
                 shape = new Polyline { Points = new PointCollection(mark.Points.Select(p => new Point(p[0], p[1]))), Stroke = brush, StrokeThickness = mark.Width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round }; break;
             case "Text":
-                shape = new TextBlock { Text = mark.Text, Foreground = brush, FontSize = Math.Max(18, mark.Width * 6), FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, MaxWidth = textMaxWidth ?? Math.Max(1, canvas.Width - mark.X) };
+                var style = mark.TextStyle?.Normalize();
+                var text = new TextBlock { Text = mark.Text, Foreground = brush, FontSize = style?.Size ?? Math.Max(18, mark.Width * 6), FontFamily = new FontFamily(style?.FontFamily ?? "Segoe UI"), FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap };
+                double maxWidth = textMaxWidth ?? Math.Max(1, canvas.Width - mark.X);
+                shape = style is null ? text : new Border { Child = text, Background = (Brush)new BrushConverter().ConvertFromString(style.Background)!, BorderBrush = (Brush)new BrushConverter().ConvertFromString(style.BorderColor)!, BorderThickness = new Thickness(style.BorderWidth), Padding = new Thickness(4) };
+                shape.MaxWidth = maxWidth;
                 Canvas.SetLeft(shape, mark.X); Canvas.SetTop(shape, mark.Y); break;
             case "Number":
                 double size = Math.Max(32, mark.Width * 9);

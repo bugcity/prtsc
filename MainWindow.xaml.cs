@@ -31,7 +31,10 @@ public partial class MainWindow : Window
     private CaptureToast? toast;
     private bool closing, exitRequested, syncingSelection, moving, restoringEditor;
     private WindowState lastEditorState = WindowState.Normal;
-    private int selectedIndex = -1;
+    private readonly HashSet<int> selectedIndices = [];
+    private int primaryIndex = -1;
+    private int selectedIndex { get => primaryIndex; set { primaryIndex = value; selectedIndices.Clear(); if (value >= 0) selectedIndices.Add(value); } }
+    private Dictionary<int, Mark>? dragSelection;
     private string dragPart = "Move";
     private Point dragStart;
     private Mark? dragOriginal, selectionDraft;
@@ -48,15 +51,20 @@ public partial class MainWindow : Window
     private HwndSource? hwndSource;
     private IntPtr hwnd;
     private const int HotkeyId = 4812;
+    private int activeHotkeyId = HotkeyId;
+    private bool hotkeyRegistered;
 
     public MainWindow(CaptureStore? captureStore = null, Func<BitmapSource, Task>? clipboardWriter = null, bool enableShell = true)
     {
         store = captureStore ?? new CaptureStore();
         settingsStore = new CaptureSettingsStore(Path.Combine(store.Root, "settings.json")); settings = settingsStore.Load();
+        color = settings.Color; arrowStyle = settings.ArrowStyle;
         dragExport = new CaptureDragExport(store);
         copyToClipboard = clipboardWriter ?? ImageClipboard.CopyAsync; this.enableShell = enableShell;
         syncingSelection = true; InitializeComponent();
         StrokeSlider.Value = settings.StrokeWidth;
+        CurrentColor.Fill = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString(color)!;
+        UpdateHotkeyLabel();
         ArrowStyleBox.ItemsSource = ArrowStyles.Options; ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = false;
         entries = new(store.Load()); History.ItemsSource = entries;
         historyDrag = new ThumbnailDrag(dragExport.Create, ex => StatusLabel.Text = "ドラッグできませんでした · " + ex.Message); historyDrag.Attach(History);
@@ -69,12 +77,14 @@ public partial class MainWindow : Window
             if (!enableShell) return;
             tray = new TrayController(Dispatcher, ShowGallery, () => _ = Capture(CaptureMode.Region), () => _ = Capture(CaptureMode.Window), ShowEditor, RequestExit);
             hwnd = new WindowInteropHelper(this).Handle; hwndSource = HwndSource.FromHwnd(hwnd); hwndSource?.AddHook(WindowMessage);
-            if (!RegisterHotKey(hwnd, HotkeyId, 0x4000, 0x2C))
+            hotkeyRegistered = HotkeyBinding.Register(hwnd, activeHotkeyId, settings.HotkeyModifiers, settings.HotkeyKey);
+            if (!hotkeyRegistered)
             {
-                HotkeyLabel.Text = "PrtSc：登録できませんでした";
+                HotkeyLabel.Text = HotkeyBinding.Label(settings.HotkeyModifiers, settings.HotkeyKey) + "：登録できませんでした";
                 HotkeyLabel.ToolTip = "他の撮影アプリ、または Windows の Print Screen キー設定を確認してください。撮影ボタンは利用できます。";
-                StatusLabel.Text = "PrtSc が競合しています。左の撮影ボタンを使えます。";
+                StatusLabel.Text = "撮影ホットキーが競合しています。設定で変更できます。";
             }
+            if (settings.StartWithWindows) Run(() => StartupRegistration.Apply(true));
         };
         StateChanged += (_, _) =>
         {
@@ -90,7 +100,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             closing = true; toast?.Close(); gallery?.Close(); tray?.Dispose();
-            if (hwnd != IntPtr.Zero) UnregisterHotKey(hwnd, HotkeyId); hwndSource?.RemoveHook(WindowMessage);
+            if (hwnd != IntPtr.Zero) UnregisterHotKey(hwnd, activeHotkeyId); hwndSource?.RemoveHook(WindowMessage);
             if (enableShell) System.Windows.Application.Current.Shutdown();
         };
         PreviewKeyDown += OnKeyDown;
@@ -103,7 +113,7 @@ public partial class MainWindow : Window
     }
     private IntPtr WindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (message == 0x0312 && wParam.ToInt32() == HotkeyId) { handled = true; _ = Capture(CaptureMode.Region); }
+        if (message == 0x0312 && wParam.ToInt32() == activeHotkeyId) { handled = true; _ = Capture(CaptureMode.Region); }
         return IntPtr.Zero;
     }
     private void Run(Action action)
@@ -217,8 +227,8 @@ public partial class MainWindow : Window
         settingsOpen = true;
         try
         {
-            var dialog = new SettingsDialog(settings.MaxCaptures, entries.Count) { Owner = gallery?.IsVisible == true ? gallery : this };
-            if (dialog.ShowDialog() == true) Run(() => ApplyCaptureLimit(dialog.Limit));
+            var dialog = new SettingsDialog(settings.MaxCaptures, entries.Count, settings) { Owner = gallery?.IsVisible == true ? gallery : this };
+            if (dialog.ShowDialog() == true) Run(() => ApplyApplicationSettings(settings with { MaxCaptures = dialog.Limit, HotkeyModifiers = dialog.HotkeyModifiers, HotkeyKey = dialog.HotkeyKey, StartWithWindows = dialog.StartWithWindows }));
         }
         finally { settingsOpen = false; }
     }
@@ -252,9 +262,10 @@ public partial class MainWindow : Window
     private void Redraw()
     {
         if (original is null || current is null) return;
-        AnnotationRenderer.Draw(Editor, original, current.Marks.Select((mark, i) => i == selectedIndex && selectionDraft is not null ? selectionDraft : mark), current.Crop);
+        AnnotationRenderer.Draw(Editor, original, current.Marks.Select((mark, i) => PreviewMark(i, mark)), current.Crop);
         if (draft is not null) AnnotationRenderer.Add(Editor, ImageCrop.DisplayMark(draft, current.Crop), Math.Max(1, original.PixelWidth - draft.X));
-        if (selectedIndex >= 0 && selectedIndex < current.Marks.Count) AnnotationSelection.Draw(Editor, selectedIndex, ImageCrop.DisplayMark(selectionDraft ?? current.Marks[selectedIndex], current.Crop));
+        foreach (int index in selectedIndices.OrderBy(i => i))
+            if (index < current.Marks.Count) AnnotationSelection.Draw(Editor, index, ImageCrop.DisplayMark(PreviewMark(index, current.Marks[index]), current.Crop), selectedIndices.Count == 1);
         CropActions.Visibility = tool == "Crop" ? Visibility.Visible : Visibility.Collapsed;
         ApplyCropButton.IsEnabled = cropDraft is { Width: > 0, Height: > 0 };
         if (tool == "Crop" && cropDraft is not null) DrawCropOverlay(cropDraft);
@@ -340,7 +351,9 @@ public partial class MainWindow : Window
         if (value != "Select")
         {
             selectedIndex = -1; UpdateSelectionControls();
-            syncingSelection = true; StrokeSlider.Value = settings.StrokeWidth; syncingSelection = false; Redraw();
+            syncingSelection = true; StrokeSlider.Value = settings.StrokeWidth; color = settings.Color; arrowStyle = settings.ArrowStyle;
+            CurrentColor.Fill = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString(color)!;
+            ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = false; Redraw();
         }
         Editor.Cursor = value == "Select" ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.Cross;
         foreach (var button in Tools.Children.OfType<Button>())
@@ -356,18 +369,18 @@ public partial class MainWindow : Window
     private void ChooseColor(object sender, RoutedEventArgs e)
     {
         color = (string)((Button)sender).Tag; CurrentColor.Fill = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString(color)!;
-        if (SelectedMark is { } selected && document is not null)
-        { document.Change(marks => marks[selectedIndex] = selected with { Color = color }); Commit(); }
+        SavePreferences(settings with { Color = color });
+        ChangeSelected(mark => mark with { Color = color });
     }
     private Mark? SelectedMark => current is not null && selectedIndex >= 0 && selectedIndex < current.Marks.Count ? current.Marks[selectedIndex] : null;
     private void UpdateSelectionControls()
     {
         if (EditTextButton is null) return;
         var mark = SelectedMark;
-        EditTextButton.IsEnabled = mark?.Tool is "Text" or "Number";
+        EditTextButton.IsEnabled = selectedIndices.Count == 1 && (mark?.Tool is "Text" or "Number");
         DeleteMarkButton.IsEnabled = mark is not null;
         UpdateArrowControls();
-        SelectionLabel.Text = mark is null ? "V で注釈を選択 · ドラッグで移動 · 文字はダブルクリックで編集" : "選択中 · ドラッグで移動 / 端の丸でサイズ変更 · Delete で注釈を削除";
+        SelectionLabel.Text = mark is null ? "Ctrl/Shift＋クリックで複数選択 · Ctrl+A ですべて選択" : $"{selectedIndices.Count} 件選択 · Ctrl+D 複製 · 矢印キーで移動（Shiftで10px）";
         if (mark is null) return;
         syncingSelection = true;
         StrokeSlider.Value = mark.Width; color = mark.Color; CurrentColor.Fill = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString(color)!;
@@ -376,7 +389,7 @@ public partial class MainWindow : Window
     private void UpdateArrowControls()
     {
         if (ArrowStyleBox is null) return;
-        ArrowStyleBox.IsEnabled = tool == "Arrow" || SelectedMark?.Tool == "Arrow";
+        ArrowStyleBox.IsEnabled = tool == "Arrow" || current is not null && selectedIndices.Any(i => current.Marks[i].Tool == "Arrow");
         if (SelectedMark is not { Tool: "Arrow" } selected) return;
         arrowStyle = ArrowStyles.Options.Any(option => option.Key == selected.ArrowStyle) ? selected.ArrowStyle : "Open";
         bool wasSyncing = syncingSelection; syncingSelection = true; ArrowStyleBox.SelectedValue = arrowStyle; syncingSelection = wasSyncing;
@@ -385,8 +398,8 @@ public partial class MainWindow : Window
     {
         if (syncingSelection || ArrowStyleBox.SelectedItem is not ArrowStyleOption option) return;
         arrowStyle = option.Key;
-        if (SelectedMark is not { Tool: "Arrow" } selected || document is null || selected.ArrowStyle == arrowStyle) return;
-        CancelGesture(); document.Change(marks => marks[selectedIndex] = selected with { ArrowStyle = arrowStyle }); Commit();
+        SavePreferences(settings with { ArrowStyle = arrowStyle });
+        ChangeSelected(mark => mark.Tool == "Arrow" ? mark with { ArrowStyle = arrowStyle } : mark);
     }
     internal void SelectAnnotation(int index)
     {
@@ -398,8 +411,7 @@ public partial class MainWindow : Window
         if (syncingSelection) return;
         if (settings.StrokeWidth != e.NewValue)
             Run(() => { var next = settings with { StrokeWidth = e.NewValue }; settingsStore.Save(next); settings = next; });
-        if (SelectedMark is not { } selected || document is null) return;
-        document.Change(marks => marks[selectedIndex] = selected with { Width = e.NewValue }); Commit();
+        ChangeSelected(mark => mark.Tool == "Text" ? mark : mark with { Width = e.NewValue });
     }
     private Point Position(MouseEventArgs e)
     {
@@ -423,15 +435,20 @@ public partial class MainWindow : Window
         if (tool == "Select")
         {
             dragPart = "Move";
-            if (SelectedMark is { } selected && AnnotationSelection.HasEndpoints(selected) && (point - AnnotationDocument.Endpoints(selected).Start).Length <= 10) dragPart = "Start";
-            else if (SelectedMark is { } endMark && AnnotationSelection.HasEndpoints(endMark) && (point - AnnotationDocument.Endpoints(endMark).End).Length <= 10) dragPart = "End";
-            else selectedIndex = HitTestAnnotation(point);
+            if (Keyboard.Modifiers is ModifierKeys.Control or ModifierKeys.Shift)
+            {
+                ToggleSelection(HitTestAnnotation(point)); e.Handled = true; return;
+            }
+            if (selectedIndices.Count == 1 && SelectedMark is { } selected && AnnotationSelection.HasEndpoints(selected) && (point - AnnotationDocument.Endpoints(selected).Start).Length <= 10) dragPart = "Start";
+            else if (selectedIndices.Count == 1 && SelectedMark is { } endMark && AnnotationSelection.HasEndpoints(endMark) && (point - AnnotationDocument.Endpoints(endMark).End).Length <= 10) dragPart = "End";
+            else { int hit = HitTestAnnotation(point); if (!selectedIndices.Contains(hit)) selectedIndex = hit; }
             UpdateSelectionControls(); Redraw();
             if (SelectedMark is not { } chosen) return;
             moving = true; dragStart = point; dragOriginal = chosen; selectionDraft = chosen;
+            dragSelection = selectedIndices.ToDictionary(i => i, i => current.Marks[i]);
             Editor.CaptureMouse(); e.Handled = true; return;
         }
-        var mark = new Mark { Tool = tool, ArrowStyle = arrowStyle, Color = color, Width = StrokeSlider.Value, X = point.X, Y = point.Y, X2 = point.X, Y2 = point.Y };
+        var mark = new Mark { Tool = tool, ArrowStyle = arrowStyle, Color = color, Width = StrokeSlider.Value, TextStyle = tool == "Text" ? settings.TextStyle : null, X = point.X, Y = point.Y, X2 = point.X, Y2 = point.Y };
         if (tool == "Text")
         {
             var text = AskText();
@@ -469,9 +486,11 @@ public partial class MainWindow : Window
         }
         if (moving && selectionDraft is not null && document is not null)
         {
-            var mark = TransformSelection(Position(e)); moving = false; selectionDraft = null; Editor.ReleaseMouseCapture();
-            if ((Position(e) - dragStart).Length >= 0.5) { document.Change(marks => marks[selectedIndex] = mark); Commit(); }
+            var mark = TransformSelection(Position(e)); var delta = Position(e) - dragStart;
+            moving = false; selectionDraft = null; Editor.ReleaseMouseCapture();
+            if (delta.Length >= 0.5) { document.Change(marks => { foreach (var pair in dragSelection!) marks[pair.Key] = dragPart == "Move" ? AnnotationDocument.Move(pair.Value, delta) : mark; }); Commit(); }
             else Redraw();
+            dragSelection = null;
             return;
         }
         if (draft is null || current is null || document is null) return;
@@ -491,12 +510,12 @@ public partial class MainWindow : Window
     private void LostCapture(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (draft is null && !moving && !cropping) return;
-        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; Redraw();
+        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragSelection = null; Redraw();
     }
     private void CancelGesture()
     {
         if (draft is null && !moving && !cropping && cropDraft is null) return;
-        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null;
+        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null; dragSelection = null;
         Editor.ReleaseMouseCapture(); Redraw();
     }
     private string? AskText(string initialText = "")
@@ -514,7 +533,8 @@ public partial class MainWindow : Window
     {
         if (SelectedMark is null || document is null) return;
         CancelGesture();
-        document.Change(marks => marks.RemoveAt(selectedIndex)); selectedIndex = -1; UpdateSelectionControls(); Commit();
+        var indices = selectedIndices.OrderByDescending(i => i).ToArray();
+        document.Change(marks => { foreach (int i in indices) marks.RemoveAt(i); }); selectedIndex = -1; UpdateSelectionControls(); Commit();
     }
     private void Undo(object? sender, RoutedEventArgs? e)
     {
@@ -564,6 +584,7 @@ public partial class MainWindow : Window
     private void OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
+        if (Keyboard.FocusedElement is System.Windows.Controls.Slider or System.Windows.Controls.ComboBox && e.Key is Key.Left or Key.Right or Key.Up or Key.Down) return;
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             switch (e.Key)
@@ -574,6 +595,12 @@ public partial class MainWindow : Window
                 case Key.V: Run(() => { if (Clipboard.GetImage() is { } pasted) AddCapture(pasted, "貼り付け " + DateTime.Now.ToString("HH:mm:ss")); }); break;
                 case Key.S: ExportImage(this, e); break;
                 case Key.O: OpenImage(this, e); break;
+                case Key.A: SelectAllAnnotations(); break;
+                case Key.D: DuplicateSelected(this, e); break;
+                case Key.PageUp: BringForward(this, e); break;
+                case Key.PageDown: SendBackward(this, e); break;
+                case Key.Home: BringToFront(this, e); break;
+                case Key.End: SendToBack(this, e); break;
                 case Key.D0: ZoomFit(this, e); break;
                 case Key.D1: ZoomActual(this, e); break;
                 case Key.Add: case Key.OemPlus: ZoomIn(this, e); break;
@@ -582,8 +609,14 @@ public partial class MainWindow : Window
             }
             e.Handled = true;
         }
-        else if (Keyboard.Modifiers == ModifierKeys.None)
+        else if (Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
+            if (selectedIndices.Count > 0 && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+            {
+                double step = Keyboard.Modifiers == ModifierKeys.Shift ? 10 : 1;
+                NudgeSelection(new Vector(e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0, e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0)); e.Handled = true; return;
+            }
+            if (Keyboard.Modifiers != ModifierKeys.None) return;
             if (e.Key == Key.Escape) { CancelGesture(); selectedIndex = -1; if (tool == "Crop") SetTool("Select"); UpdateSelectionControls(); Redraw(); }
             if (e.Key == Key.Enter && tool == "Crop") { ApplyCropClick(this, e); e.Handled = true; }
             if (e.Key == Key.Delete) { DeleteSelected(this, e); e.Handled = true; }
@@ -591,6 +624,5 @@ public partial class MainWindow : Window
             if (value is not null) SetTool(value);
         }
     }
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
 }

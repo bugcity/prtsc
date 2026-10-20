@@ -176,8 +176,9 @@ internal static class SelfTest
             LibraryFeaturesTests.Run(Path.Combine(root, "library-tests"), image);
             EditorPreferencesTests.Run(Path.Combine(root, "editor-tests"), image);
             CropAndZoomTests.Run(Path.Combine(root, "crop-tests"), image);
+            EditingAndShellTests.Run(Path.Combine(root, "editing-shell-tests"), image);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: display-only zoom, lossless crop pixels/text layout, crop persistence/Undo/Redo/cancel/editing, cropped clipboard and drag exports, original preservation, compact toolbar/control sizes, stroke width preferences, pen resizing, retention, safe drag snapshots, tray restoration/exit, arrow styles, notification fade.");
+        File.WriteAllText("self-test-result.txt", "PASS: independent text styles and legacy text compatibility, group selection/duplicate/reorder/nudge/delete/Undo/Redo, drawing preference persistence, hotkey/startup settings validation, single-instance wake and release, capture magnifier and pixel dimensions, display-only zoom, lossless crop/text layout, clipboard and drag exports, compact toolbar, pen resizing, retention, tray restoration/exit, arrow styles, notification fade.");
     }
 }

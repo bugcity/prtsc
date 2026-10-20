@@ -15,6 +15,7 @@ public sealed record Mark
     public double X2 { get; init; }
     public double Y2 { get; init; }
     public string Text { get; init; } = "";
+    public TextStyle? TextStyle { get; init; }
     public List<double[]> Points { get; init; } = [];
 }
 

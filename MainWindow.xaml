@@ -59,6 +59,18 @@
             </ComboBox>
             <Button x:Name="EditTextButton" Content="文字を編集" Click="EditSelectedText" IsEnabled="False" Padding="10,3"/>
             <Button x:Name="DeleteMarkButton" Content="注釈を削除" Click="DeleteSelected" IsEnabled="False" Padding="10,3"/>
+            <Button Content="編集操作 ▾" Padding="10,3" Click="OpenEditMenu" ToolTip="複製・複数選択・重なり順">
+              <Button.ContextMenu><ContextMenu>
+                <MenuItem Header="文字の書式…" Click="EditTextStyle"/>
+                <Separator/>
+                <MenuItem Header="複製" InputGestureText="Ctrl+D" Click="DuplicateSelected"/>
+                <MenuItem Header="すべての注釈を選択" InputGestureText="Ctrl+A" Click="SelectAllClick"/>
+                <MenuItem Header="前面へ" InputGestureText="Ctrl+PageUp" Click="BringForward"/>
+                <MenuItem Header="背面へ" InputGestureText="Ctrl+PageDown" Click="SendBackward"/>
+                <MenuItem Header="最前面へ" InputGestureText="Ctrl+Home" Click="BringToFront"/>
+                <MenuItem Header="最背面へ" InputGestureText="Ctrl+End" Click="SendToBack"/>
+              </ContextMenu></Button.ContextMenu>
+            </Button>
           </WrapPanel>
         </StackPanel>
       </Border>

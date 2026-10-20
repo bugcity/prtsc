@@ -38,6 +38,7 @@ internal sealed class RegionWindow : Window
     private readonly IReadOnlyList<WindowTarget> targets;
     private readonly System.Drawing.Rectangle desktopBounds = System.Windows.Forms.SystemInformation.VirtualScreen;
     private readonly TextBlock hint = new() { Foreground = Brushes.White, FontSize = 15, TextAlignment = TextAlignment.Center };
+    private readonly CaptureLoupe loupe = new();
     private bool windowOnly;
     private WindowTarget? hovered, pressedTarget;
     private Point start;
@@ -54,6 +55,7 @@ internal sealed class RegionWindow : Window
         grid.Children.Add(new System.Windows.Controls.Image { Source = source, Stretch = Stretch.Fill });
         grid.Children.Add(new Border { Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(65, 0, 0, 0)), IsHitTestVisible = false });
         grid.Children.Add(surface); surface.Background = Brushes.Transparent; surface.Children.Add(selection);
+        surface.Children.Add(loupe);
         grid.Children.Add(new Border { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(20, 32, 20, 0), Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 29, 45)), CornerRadius = new CornerRadius(10), Padding = new Thickness(22, 13, 22, 13), IsHitTestVisible = false, Child = hint });
         Content = grid;
         UpdateHint();
@@ -85,6 +87,7 @@ internal sealed class RegionWindow : Window
             var point = e.GetPosition(surface);
             if (dragging && !windowOnly && (point - start).Length >= 4) Update(point);
             else if (!dragging || windowOnly) Hover(point);
+            else UpdateLoupe(point, Int32Rect.Empty);
         };
         surface.MouseLeftButtonUp += (_, e) =>
         {
@@ -126,6 +129,7 @@ internal sealed class RegionWindow : Window
             selection.Height = rect.Height * surface.ActualHeight / screenshot.PixelHeight;
         }
         UpdateHint();
+        UpdateLoupe(point, rect);
     }
     private void UpdateHint()
     {
@@ -140,6 +144,17 @@ internal sealed class RegionWindow : Window
         selection.Visibility = Visibility.Visible;
         Canvas.SetLeft(selection, Math.Min(start.X, end.X)); Canvas.SetTop(selection, Math.Min(start.Y, end.Y));
         selection.Width = Math.Abs(end.X - start.X); selection.Height = Math.Abs(end.Y - start.Y);
+        var rect = PixelRect(start, end, surface.ActualWidth, surface.ActualHeight, screenshot.PixelWidth, screenshot.PixelHeight);
+        UpdateLoupe(end, rect);
+    }
+    private void UpdateLoupe(Point point, Int32Rect rect)
+    {
+        if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0) return;
+        double sx = surface.ActualWidth / screenshot.PixelWidth, sy = surface.ActualHeight / screenshot.PixelHeight;
+        var position = new System.Drawing.Point(desktopBounds.X + (int)(point.X / sx), desktopBounds.Y + (int)(point.Y / sy));
+        var monitor = System.Windows.Forms.Screen.FromPoint(position).Bounds;
+        loupe.Update(screenshot, point, surface.ActualWidth, surface.ActualHeight, rect,
+            new Rect((monitor.X - desktopBounds.X) * sx, (monitor.Y - desktopBounds.Y) * sy, monitor.Width * sx, monitor.Height * sy));
     }
     internal static Int32Rect PixelRect(Point start, Point end, double width, double height, int pixelsX, int pixelsY)
     {

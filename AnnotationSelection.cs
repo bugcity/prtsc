@@ -43,13 +43,13 @@ internal static class AnnotationSelection
         }
         return -1;
     }
-    internal static void Draw(Canvas canvas, int index, Mark mark)
+    internal static void Draw(Canvas canvas, int index, Mark mark, bool showEndpoints = true)
     {
         canvas.UpdateLayout();
         var bounds = Bounds(canvas, index); bounds.Inflate(5, 5);
         var frame = new System.Windows.Shapes.Rectangle { Width = bounds.Width, Height = bounds.Height, Stroke = Brushes.SlateBlue, StrokeThickness = 1.5, StrokeDashArray = [4, 3], IsHitTestVisible = false };
         Canvas.SetLeft(frame, bounds.X); Canvas.SetTop(frame, bounds.Y); canvas.Children.Add(frame);
-        if (!HasEndpoints(mark)) return;
+        if (!showEndpoints || !HasEndpoints(mark)) return;
         var endpoints = AnnotationDocument.Endpoints(mark);
         foreach (var point in new[] { endpoints.Start, endpoints.End })
         {
