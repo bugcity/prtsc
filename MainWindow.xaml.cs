@@ -75,7 +75,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             if (!enableShell) return;
-            tray = new TrayController(Dispatcher, ShowGallery, () => _ = Capture(CaptureMode.Region), () => _ = Capture(CaptureMode.Window), ShowEditor, RequestExit);
+            tray = new TrayController(Dispatcher, ShowGallery, () => _ = Capture(CaptureMode.Region), () => _ = Capture(CaptureMode.Window), ShowEditor, RequestExit, () => _ = RecordVideo(), StopVideoRecording);
             hwnd = new WindowInteropHelper(this).Handle; hwndSource = HwndSource.FromHwnd(hwnd); hwndSource?.AddHook(WindowMessage);
             hotkeyRegistered = HotkeyBinding.Register(hwnd, activeHotkeyId, settings.HotkeyModifiers, settings.HotkeyKey);
             if (!hotkeyRegistered)
@@ -99,6 +99,8 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            foreach (var player in videoPlayers.Values.ToArray()) player.Close();
+            recording?.Dispose();
             closing = true; toast?.Close(); gallery?.Close(); tray?.Dispose();
             if (hwnd != IntPtr.Zero) UnregisterHotKey(hwnd, activeHotkeyId); hwndSource?.RemoveHook(WindowMessage);
             if (enableShell) System.Windows.Application.Current.Shutdown();
@@ -109,6 +111,7 @@ public partial class MainWindow : Window
     internal void RequestExit()
     {
         if (closing) return;
+        if (recordingBusy) { exitAfterRecording = true; recordingSetup?.Close(); StopVideoRecording(); return; }
         PrepareForShutdown(); Close();
     }
     private IntPtr WindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -127,7 +130,7 @@ public partial class MainWindow : Window
     private async void CaptureWindow(object sender, RoutedEventArgs e) => await Capture(CaptureMode.Window);
     private async Task Capture(CaptureMode mode)
     {
-        if (capturing || settingsOpen || !IsEnabled || closing) return;
+        if (capturing || recordingBusy || settingsOpen || !IsEnabled || closing) return;
         capturing = true;
         bool restoreEditor = IsVisible && WindowState != WindowState.Minimized;
         bool restoreGallery = gallery?.IsVisible == true;
@@ -175,6 +178,7 @@ public partial class MainWindow : Window
     }
     private void ShowEditor()
     {
+        if (recordingBusy) { recordingControls?.Activate(); return; }
         if (closing || settingsOpen) return;
         restoringEditor = true;
         try
@@ -195,10 +199,11 @@ public partial class MainWindow : Window
     }
     private void ShowGallery()
     {
+        if (recordingBusy) { recordingControls?.Activate(); return; }
         if (capturing || closing || settingsOpen || !IsEnabled) return;
         if (gallery is null)
         {
-            gallery = new GalleryWindow(entries, CopyEntryAsync, OpenEntry, () => _ = Capture(CaptureMode.Region), dragExport.Create, () => OpenSettings(this, new RoutedEventArgs()));
+            gallery = new GalleryWindow(entries, CopyEntryAsync, OpenEntry, () => _ = Capture(CaptureMode.Region), dragExport.Create, () => OpenSettings(this, new RoutedEventArgs()), () => _ = RecordVideo());
             gallery.Closed += (_, _) => gallery = null;
         }
         WindowActivation.Show(gallery); toast?.Close();
@@ -206,12 +211,13 @@ public partial class MainWindow : Window
     private void OpenEntry(CaptureEntry entry)
     {
         if (!entries.Contains(entry)) return;
+        if (entry.IsVideo) { OpenVideo(entry); return; }
         History.SelectedItem = entry;
         ShowEditor();
         toast?.Close(); gallery?.Hide();
     }
     internal Task CopyEntryAsync(CaptureEntry entry)
-        => copyToClipboard(AnnotationRenderer.Render(store.Original(entry), entry.Marks, entry.Crop));
+        => entry.IsVideo ? ImageClipboard.CopyFilesAsync(dragExport.Create(entry)) : copyToClipboard(AnnotationRenderer.Render(store.Original(entry), entry.Marks, entry.Crop));
     internal CaptureEntry AddCapture(BitmapSource bitmap, string title, bool select = true)
     {
         var entry = new CaptureEntry { Title = title };
@@ -223,12 +229,12 @@ public partial class MainWindow : Window
     }
     private void OpenSettings(object sender, RoutedEventArgs e)
     {
-        if (settingsOpen || capturing || closing) return;
+        if (settingsOpen || capturing || recordingBusy || closing) return;
         settingsOpen = true;
         try
         {
             var dialog = new SettingsDialog(settings.MaxCaptures, entries.Count, settings) { Owner = gallery?.IsVisible == true ? gallery : this };
-            if (dialog.ShowDialog() == true) Run(() => ApplyApplicationSettings(settings with { MaxCaptures = dialog.Limit, HotkeyModifiers = dialog.HotkeyModifiers, HotkeyKey = dialog.HotkeyKey, StartWithWindows = dialog.StartWithWindows }));
+            if (dialog.ShowDialog() == true) Run(() => ApplyApplicationSettings(settings with { MaxCaptures = dialog.Limit, HotkeyModifiers = dialog.HotkeyModifiers, HotkeyKey = dialog.HotkeyKey, StartWithWindows = dialog.StartWithWindows, RenderingMethod = dialog.RenderingMethod }));
         }
         finally { settingsOpen = false; }
     }
@@ -241,15 +247,28 @@ public partial class MainWindow : Window
     {
         foreach (var entry in CaptureRetention.Excess(entries, settings.MaxCaptures))
         {
-            store.Delete(entry); entries.Remove(entry);
+            CloseVideo(entry); store.Delete(entry); entries.Remove(entry);
         }
         CountLabel.Text = $"{entries.Count} 枚";
     }
     private void HistoryChanged(object sender, SelectionChangedEventArgs e)
     {
         draft = null; moving = false; cropping = false; cropDraft = null; fitToView = true; selectionDraft = null; selectedIndex = -1; Editor.ReleaseMouseCapture();
+        dragOriginal = null; dragSelection = null; original = null;
+        Editor.Children.Clear(); VideoThumbnail.Source = null;
         current = History.SelectedItem as CaptureEntry;
-        document = current is null ? null : new AnnotationDocument(current); UpdateSelectionControls();
+        document = current is null || current.IsVideo ? null : new AnnotationDocument(current); UpdateSelectionControls();
+        VideoPreview.Visibility = Visibility.Collapsed; AnnotationProperties.IsEnabled = current?.IsVideo != true;
+        foreach (UIElement child in Tools.Children) child.IsEnabled = current?.IsVideo != true || ReferenceEquals(child, DeleteCaptureButton);
+        ExportButton.Content = current?.IsVideo == true ? "MP4 を保存 ↗" : "PNG を保存 ↗";
+        DeleteCaptureButton.Content = current?.IsVideo == true ? "動画を削除" : "画像を削除";
+        if (current?.IsVideo == true)
+        {
+            original = null; CropActions.Visibility = ImageView.Visibility = EmptyState.Visibility = Visibility.Collapsed;
+            VideoPreview.Visibility = Visibility.Visible; VideoThumbnail.Source = current.Thumbnail;
+            TitleLabel.Text = current.Title; DetailLabel.Text = $"{current.VideoWidth} × {current.VideoHeight} px · MP4 · {TimeSpan.FromSeconds(current.DurationSeconds):hh\\:mm\\:ss}";
+            StatusLabel.Text = "録画済みの動画 · 再生・MP4保存・ファイルとしてコピーできます"; return;
+        }
         if (current is null) { original = null; CropActions.Visibility = Visibility.Collapsed; ImageView.Visibility = Visibility.Collapsed; EmptyState.Visibility = Visibility.Visible; TitleLabel.Text = "キャプチャを、伝わる一枚に。"; DetailLabel.Text = "撮影して、書き込んで、すぐ共有。"; return; }
         Run(() =>
         {
@@ -490,7 +509,7 @@ public partial class MainWindow : Window
             moving = false; selectionDraft = null; Editor.ReleaseMouseCapture();
             if (delta.Length >= 0.5) { document.Change(marks => { foreach (var pair in dragSelection!) marks[pair.Key] = dragPart == "Move" ? AnnotationDocument.Move(pair.Value, delta) : mark; }); Commit(); }
             else Redraw();
-            dragSelection = null;
+            dragSelection = null; dragOriginal = null;
             return;
         }
         if (draft is null || current is null || document is null) return;
@@ -510,7 +529,7 @@ public partial class MainWindow : Window
     private void LostCapture(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (draft is null && !moving && !cropping) return;
-        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragSelection = null; Redraw();
+        draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null; dragSelection = null; Redraw();
     }
     private void CancelGesture()
     {
@@ -569,12 +588,14 @@ public partial class MainWindow : Window
     }
     private async void CopyImage(object? sender, RoutedEventArgs? e)
     {
-        if (original is null || current is null) return;
-        try { await CopyEntryAsync(current); StatusLabel.Text = "注釈付きの画像をコピーしました"; }
+        if (current is null || original is null && !current.IsVideo) return;
+        var entry = current;
+        try { await CopyEntryAsync(entry); StatusLabel.Text = entry.IsVideo ? "動画ファイルをコピーしました" : "注釈付きの画像をコピーしました"; }
         catch (Exception ex) { StatusLabel.Text = "コピーできませんでした · " + ex.Message; }
     }
     private void ExportImage(object sender, RoutedEventArgs e)
     {
+        if (current?.IsVideo == true) { SaveVideo(current); return; }
         if (original is null || current is null) return;
         var name = string.Concat(current.Title.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PNG 画像|*.png", FileName = name + ".png", AddExtension = true };
@@ -584,7 +605,7 @@ public partial class MainWindow : Window
     {
         if (current is null) return;
         if (MessageBox.Show(this, "このキャプチャを履歴から削除しますか？", "キャプチャを削除", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        Run(() => { var entry = current; store.Delete(entry); entries.Remove(entry); if (entries.Count > 0) History.SelectedIndex = 0; CountLabel.Text = $"{entries.Count} 枚"; });
+        Run(() => { var entry = current; CloseVideo(entry); store.Delete(entry); entries.Remove(entry); if (entries.Count > 0) History.SelectedIndex = 0; CountLabel.Text = $"{entries.Count} 枚"; });
     }
     private void OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {

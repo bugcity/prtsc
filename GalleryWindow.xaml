@@ -3,29 +3,41 @@
   <Grid Margin="24">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <StackPanel><TextBlock Text="キャプチャ・ギャラリー" FontSize="23" FontWeight="SemiBold" Foreground="#20263B"/><TextBlock Text="コピーしてすぐ共有。編集データはそのまま。" Foreground="#8590A6" Margin="0,6,0,0"/></StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="設定" Click="SettingsClick"/><Button Content="＋ 撮影" Click="CaptureClick" Background="#6366F1" Foreground="White" BorderThickness="0"/></StackPanel>
+      <StackPanel><TextBlock Text="キャプチャ・ギャラリー" TextTrimming="CharacterEllipsis" FontSize="23" FontWeight="SemiBold" Foreground="#20263B"/><TextBlock Text="コピーしてすぐ共有。編集データはそのまま。" TextTrimming="CharacterEllipsis" Foreground="#8590A6" Margin="0,6,0,0"/></StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="設定" Click="SettingsClick"/><Button Content="● 録画" Click="RecordClick"/><Button Content="＋ 撮影" Click="CaptureClick" Background="#6366F1" Foreground="White" BorderThickness="0"/></StackPanel>
     </Grid>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <ItemsControl x:Name="Cards">
-        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate><DataTemplate>
+    <ListBox x:Name="Cards" Grid.Row="1" Background="Transparent" BorderThickness="0"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
+             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+             VirtualizingPanel.CacheLength="0" HorizontalContentAlignment="Left">
+      <ListBox.Resources>
+        <DataTemplate x:Key="CaptureCard">
           <Border Width="222" Margin="0,0,12,14" Background="White" CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Padding="10">
             <StackPanel>
-              <Button Tag="{Binding}" Click="EditClick" Padding="0" Margin="0" BorderThickness="0" Background="#EEF0F6" ToolTip="クリックで編集 · ドラッグでPNGファイルとして共有">
+              <Button Tag="{Binding}" Click="EditClick" Padding="0" Margin="0" BorderThickness="0" Background="#EEF0F6" ToolTip="{Binding OpenHint}">
                 <Image Source="{Binding Thumbnail}" Width="200" Height="126" Stretch="Uniform"/>
               </Button>
               <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" Foreground="#334155" Margin="2,10,0,0"/>
               <TextBlock Text="{Binding Caption}" Foreground="#8590A6" FontSize="11" Margin="2,4,0,8"/>
               <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                <Button Tag="{Binding}" Content="コピー" Click="CopyClick" Padding="10,7" ToolTip="注釈を含む画像としてコピー"/>
-                <Button Grid.Column="1" Tag="{Binding}" Content="編集" Click="EditClick" Padding="10,7"/>
+                <Button Tag="{Binding}" Content="コピー" Click="CopyClick" Padding="10,7" ToolTip="{Binding CopyHint}"/>
+                <Button Grid.Column="1" Tag="{Binding}" Content="{Binding OpenLabel}" Click="EditClick" Padding="10,7"/>
               </Grid>
             </StackPanel>
           </Border>
-        </DataTemplate></ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
+        </DataTemplate>
+      </ListBox.Resources>
+      <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter>
+      </Style></ListBox.ItemContainerStyle>
+      <ListBox.ItemTemplate><DataTemplate>
+        <ItemsControl ItemsSource="{Binding}" ItemTemplate="{StaticResource CaptureCard}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </DataTemplate></ListBox.ItemTemplate>
+    </ListBox>
     <TextBlock x:Name="GalleryStatus" Grid.Row="2" Text="撮影した画像がここに並びます。" Foreground="#8590A6" Margin="0,12,0,0"/>
   </Grid>
 </Window>

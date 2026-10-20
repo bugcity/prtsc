@@ -36,7 +36,9 @@ public partial class MainWindow
             throw;
         }
         if (registered) { UnregisterHotKey(hwnd, activeHotkeyId); activeHotkeyId = candidateId; hotkeyRegistered = true; }
-        settings = next; UpdateHotkeyLabel(); EnforceCaptureLimit(); StatusLabel.Text = "設定を保存しました";
+        bool changedRendering = settings.RenderingMethod != next.RenderingMethod;
+        settings = next; UpdateHotkeyLabel(); EnforceCaptureLimit();
+        StatusLabel.Text = changedRendering ? "設定を保存しました · 描画方法は再起動後に反映されます" : "設定を保存しました";
     }
     private Mark PreviewMark(int index, Mark mark)
     {

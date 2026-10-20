@@ -45,6 +45,7 @@ internal sealed class RegionWindow : Window
     private bool dragging;
     public BitmapSource? Result { get; private set; }
     public string? SelectedTitle { get; private set; }
+    public Int32Rect? SelectedBounds { get; private set; }
     public RegionWindow(BitmapSource source, IReadOnlyList<WindowTarget>? windowTargets = null, bool selectWindow = false)
     {
         screenshot = source;
@@ -105,6 +106,7 @@ internal sealed class RegionWindow : Window
             }
             else rect = PixelRect(start, end, surface.ActualWidth, surface.ActualHeight, source.PixelWidth, source.PixelHeight);
             if (rect.Width < 2 || rect.Height < 2) { Hover(end); return; }
+            SelectedBounds = rect;
             Result = new CroppedBitmap(screenshot, rect); Result.Freeze(); DialogResult = true;
         };
         surface.LostMouseCapture += (_, _) => { if (dragging) { dragging = false; Hover(System.Windows.Input.Mouse.GetPosition(surface)); } };

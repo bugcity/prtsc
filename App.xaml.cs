@@ -13,7 +13,17 @@ public partial class App : System.Windows.Application
     }
     protected override void OnStartup(StartupEventArgs e)
     {
+        var preferences = new CaptureSettingsStore(System.IO.Path.Combine(CaptureStore.DefaultRoot, "settings.json")).Load();
+        System.Windows.Media.RenderOptions.ProcessRenderMode = preferences.RenderingMethod == "Automatic"
+            ? System.Windows.Interop.RenderMode.Default : System.Windows.Interop.RenderMode.SoftwareOnly;
         base.OnStartup(e);
+        if (e.Args.Contains("--recording-self-test"))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            try { VideoRecordingTests.RunNative(System.IO.Path.Combine(Environment.CurrentDirectory, "artifacts", "recording-test")); Shutdown(0); }
+            catch (Exception ex) { System.IO.Directory.CreateDirectory("artifacts"); System.IO.File.WriteAllText(System.IO.Path.Combine("artifacts", "recording-test-error.txt"), ex.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Contains("--self-test"))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;

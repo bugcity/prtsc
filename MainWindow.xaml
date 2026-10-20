@@ -9,10 +9,11 @@
         <StackPanel Grid.Row="1">
           <Button Content="＋  範囲をキャプチャ" Background="#7375FA" Foreground="White" BorderThickness="0" Padding="16,14" FontWeight="SemiBold" Click="CaptureRegion"/>
           <Button Content="▣  ウィンドウを選択して撮影" Background="#282F46" Foreground="#D8DEF1" BorderThickness="0" Click="CaptureWindow" Margin="3,7,3,0"/>
+          <Button Content="●  動画を録画" Background="#282F46" Foreground="#D8DEF1" BorderThickness="0" Click="StartVideoRecording" Margin="3,7,3,0"/>
           <Grid Margin="0,5,0,20"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Button Content="画面全体" Background="#282F46" Foreground="#D8DEF1" BorderThickness="0" Click="CaptureFull"/><Button Grid.Column="1" Content="画像を開く" Background="#282F46" Foreground="#D8DEF1" BorderThickness="0" Click="OpenImage"/></Grid>
         </StackPanel>
         <Grid Grid.Row="2" Margin="8,0,8,12"><TextBlock Text="ライブラリ" Foreground="#A5AEC9" FontWeight="SemiBold"/><TextBlock x:Name="CountLabel" Text="0 枚" Foreground="#8A93B3" HorizontalAlignment="Right"/></Grid>
-        <ListBox x:Name="History" Grid.Row="3" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="HistoryChanged">
+        <ListBox x:Name="History" Grid.Row="3" Background="Transparent" BorderThickness="0" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="HistoryChanged">
           <ListBox.Resources>
             <Style TargetType="ScrollBar">
               <Setter Property="Width" Value="12"/>
@@ -71,7 +72,7 @@
       <Border Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1">
         <Grid Margin="25,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <StackPanel VerticalAlignment="Center"><TextBlock x:Name="TitleLabel" Text="キャプチャを、伝わる一枚に。" FontWeight="SemiBold" FontSize="19" Foreground="#20263B" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="DetailLabel" Text="撮影して、書き込んで、すぐ共有。" Foreground="#8590A6" Margin="0,5,0,0"/></StackPanel>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="コピー" ToolTip="Ctrl+C · 注釈を含む画像をコピー" Click="CopyImage"/><Button Content="PNG を保存 ↗" Background="#6366F1" Foreground="White" BorderThickness="0" Click="ExportImage"/></StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="コピー" ToolTip="Ctrl+C · 画像または動画ファイルをコピー" Click="CopyImage"/><Button x:Name="ExportButton" Content="PNG を保存 ↗" Background="#6366F1" Foreground="White" BorderThickness="0" Click="ExportImage"/></StackPanel>
         </Grid>
       </Border>
       <Border x:Name="EditorToolbar" Grid.Row="1" Background="White" BorderBrush="#E5E8F0" BorderThickness="0,0,0,1" Padding="12,5">
@@ -87,9 +88,9 @@
             <Button Tag="Number" Content="❶  番号" Click="ChooseTool" ToolTip="N"/>
             <Button Tag="Crop" Content="✂ トリム" Click="ChooseTool" ToolTip="C · 範囲を指定して切り抜き"/>
             <Button Content="↶" Click="Undo" ToolTip="Ctrl+Z · 元に戻す" Padding="10,3" VerticalAlignment="Center"/><Button Content="↷" Click="Redo" ToolTip="Ctrl+Y · やり直す" Padding="10,3" VerticalAlignment="Center"/>
-            <Button Content="画像を削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3" VerticalAlignment="Center"/>
+            <Button x:Name="DeleteCaptureButton" Content="画像を削除" Click="DeleteCapture" ToolTip="現在のキャプチャを削除" Padding="10,3" VerticalAlignment="Center"/>
           </WrapPanel>
-          <WrapPanel Margin="3,2,0,0" VerticalAlignment="Center">
+          <WrapPanel x:Name="AnnotationProperties" Margin="3,2,0,0" VerticalAlignment="Center">
             <TextBlock Text="色" Margin="0,0,8,0" Foreground="#8590A6"/>
             <Button Tag="#F43F5E" Background="#F43F5E" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="ローズ"/>
             <Button Tag="#6366F1" Background="#6366F1" Width="25" Height="25" Padding="0" Click="ChooseColor" ToolTip="インディゴ"/>
@@ -122,6 +123,10 @@
         </StackPanel>
       </Border>
       <Grid x:Name="EditorViewport" Grid.Row="2" Margin="12" SizeChanged="ViewportChanged">
+        <Grid x:Name="VideoPreview" Visibility="Collapsed" Background="#111626">
+          <Image x:Name="VideoThumbnail" Stretch="Uniform" Opacity="0.65"/>
+          <Button Content="▶ 動画を再生" Click="PlaySelectedVideo" HorizontalAlignment="Center" VerticalAlignment="Center" Background="White" Padding="24,14"/>
+        </Grid>
         <Border x:Name="EmptyState" Background="White" CornerRadius="16" BorderBrush="#E2E8F0" BorderThickness="1">
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
             <Border Background="#EEF0FF" CornerRadius="20" Width="84" Height="84" HorizontalAlignment="Center"><TextBlock Text="▣" FontSize="44" Foreground="#6366F1" HorizontalAlignment="Center"/></Border>

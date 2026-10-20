@@ -16,6 +16,8 @@ internal sealed class SettingsDialog : Window
     public uint HotkeyModifiers { get; private set; }
     public uint HotkeyKey { get; private set; }
     public bool StartWithWindows => startup.IsChecked == true;
+    internal ComboBox RenderingInput { get; }
+    public string RenderingMethod => RenderingInput.SelectedIndex == 1 ? "Automatic" : "Software";
     private readonly CheckBox startup;
     public SettingsDialog(int currentLimit, int libraryCount, CaptureSettings? preferences = null)
     {
@@ -23,8 +25,8 @@ internal sealed class SettingsDialog : Window
         Title = "Prtsc の設定"; Icon = AppIcon.Source; Width = 480; SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Brushes.White;
         var panel = new StackPanel { Margin = new Thickness(24) };
-        panel.Children.Add(new TextBlock { Text = "画像の保存枚数", FontSize = 21, FontWeight = FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = "上限を超えた画像は古い順に削除します。\n画像の元データと注釈も削除されます。", Foreground = Brushes.SlateGray, Margin = new Thickness(0, 12, 0, 18), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "ライブラリの保存上限", FontSize = 21, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "画像・動画をそれぞれ1件として数えます。\n上限を超えた古い項目は、元データごと削除します。", Foreground = Brushes.SlateGray, Margin = new Thickness(0, 12, 0, 18), TextWrapping = TextWrapping.Wrap });
         Unlimited = new CheckBox { Content = "無制限に保存する", IsChecked = currentLimit == 0, Margin = new Thickness(0, 0, 0, 14) }; panel.Children.Add(Unlimited);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         CountInput = new System.Windows.Controls.TextBox { Text = (currentLimit == 0 ? 100 : currentLimit).ToString(CultureInfo.InvariantCulture), Width = 130, Padding = new Thickness(8), FontSize = 16 };
@@ -46,6 +48,10 @@ internal sealed class SettingsDialog : Window
         var reset = new System.Windows.Controls.Button { Content = "PrtSc に戻す", HorizontalAlignment = HorizontalAlignment.Left };
         reset.Click += (_, _) => { HotkeyModifiers = 0; HotkeyKey = 0x2C; hotkey.Text = "PrtSc"; }; panel.Children.Add(reset);
         startup = new CheckBox { Content = "Windows 起動時にトレイで起動する", IsChecked = preferences.StartWithWindows, Margin = new Thickness(0, 14, 0, 18) }; panel.Children.Add(startup);
+        panel.Children.Add(new TextBlock { Text = "画面の描画方法", FontWeight = FontWeights.SemiBold });
+        RenderingInput = new ComboBox { Margin = new Thickness(0, 8, 0, 6), ItemsSource = new[] { "ソフトウェア（既定・省メモリ）", "ハードウェア優先（自動判定）" }, SelectedIndex = preferences.RenderingMethod == "Automatic" ? 1 : 0 };
+        panel.Children.Add(RenderingInput);
+        panel.Children.Add(new TextBlock { Text = "描画方法はアプリの再起動後に反映されます。", Foreground = Brushes.SlateGray, Margin = new Thickness(0, 0, 0, 14) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(new System.Windows.Controls.Button { Content = "キャンセル", IsCancel = true });
         ApplyButton = new System.Windows.Controls.Button { Content = "保存して適用", Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(99, 102, 241)), Foreground = Brushes.White };

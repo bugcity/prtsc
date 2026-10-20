@@ -23,25 +23,43 @@ public sealed class CaptureEntry : System.ComponentModel.INotifyPropertyChanged
 {
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     private BitmapSource? thumbnail;
+    private Func<BitmapSource?>? thumbnailLoader;
+    internal void SetThumbnailLoader(Func<BitmapSource?> loader)
+    {
+        thumbnail = null; thumbnailLoader = loader;
+        PropertyChanged?.Invoke(this, new(nameof(Thumbnail)));
+    }
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Title { get; set; } = "キャプチャ";
     public DateTime Created { get; set; } = DateTime.Now;
     public List<Mark> Marks { get; set; } = [];
     public CropRegion? Crop { get; set; }
+    public bool IsVideo { get; set; }
+    public double DurationSeconds { get; set; }
+    public int VideoWidth { get; set; }
+    public int VideoHeight { get; set; }
+    public bool SystemAudio { get; set; }
+    public bool Microphone { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public BitmapSource? Thumbnail
     {
-        get => thumbnail;
-        set { thumbnail = value; PropertyChanged?.Invoke(this, new(nameof(Thumbnail))); }
+        get => thumbnailLoader is null ? thumbnail : thumbnailLoader();
+        set { thumbnailLoader = null; thumbnail = value; PropertyChanged?.Invoke(this, new(nameof(Thumbnail))); }
     }
-    [System.Text.Json.Serialization.JsonIgnore] public string Caption => Created.ToString("MM/dd  HH:mm");
+    [System.Text.Json.Serialization.JsonIgnore] public string Caption => Created.ToString("MM/dd  HH:mm") + (IsVideo ? "  ·  ▶ " + TimeSpan.FromSeconds(Math.Clamp(DurationSeconds, 0, 359999)).ToString(@"hh\:mm\:ss") : "");
+    [System.Text.Json.Serialization.JsonIgnore] public string OpenLabel => IsVideo ? "再生" : "編集";
+    [System.Text.Json.Serialization.JsonIgnore] public string OpenHint => IsVideo ? "クリックで動画を再生 · ドラッグでMP4ファイルとして共有" : "クリックで編集 · ドラッグでPNGファイルとして共有";
+    [System.Text.Json.Serialization.JsonIgnore] public string CopyHint => IsVideo ? "MP4ファイルとしてコピー" : "注釈を含む画像としてコピー";
 }
 
 public sealed class CaptureStore
 {
+    public static string DefaultRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Prtsc", "Captures");
+    private readonly ThumbnailCache thumbnails = new();
+    internal int CachedThumbnailCount => thumbnails.Count;
     public string Root { get; }
     public CaptureStore(string? root = null)
     {
-        Root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Prtsc", "Captures");
+        Root = root ?? DefaultRoot;
         Directory.CreateDirectory(Root);
     }
     public string Folder(CaptureEntry entry)
@@ -58,7 +76,9 @@ public sealed class CaptureStore
             {
                 var entry = JsonSerializer.Deserialize<CaptureEntry>(File.ReadAllText(Path.Combine(folder, "capture.json")));
                 if (entry is null || entry.Id != Path.GetFileName(folder) || !Guid.TryParseExact(entry.Id, "N", out _)) continue;
-                entry.Thumbnail = ReadImage(Path.Combine(folder, "preview.png"), 420);
+                if (entry.IsVideo && !File.Exists(VideoPath(entry))) continue;
+                if (entry.IsVideo && (!double.IsFinite(entry.DurationSeconds) || entry.DurationSeconds < 0 || entry.VideoWidth < 2 || entry.VideoHeight < 2)) continue;
+                AttachThumbnail(entry);
                 entries.Add(entry);
             }
             catch (Exception ex) when (ex is IOException or JsonException or NotSupportedException or ArgumentException) { }
@@ -77,10 +97,29 @@ public sealed class CaptureStore
         var path = Path.Combine(Folder(entry), "capture.json");
         File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(entry));
         File.Move(path + ".tmp", path, true);
-        entry.Thumbnail = ReadImage(Path.Combine(Folder(entry), "preview.png"), 420);
+        thumbnails.Remove(Path.Combine(Folder(entry), "preview.png"));
+        AttachThumbnail(entry);
     }
     public BitmapSource Original(CaptureEntry entry) => ReadImage(Path.Combine(Folder(entry), "original.png"));
-    public void Delete(CaptureEntry entry) => Directory.Delete(Folder(entry), true);
+    public string VideoPath(CaptureEntry entry) => Path.Combine(Folder(entry), "recording.mp4");
+    internal void CreateVideo(CaptureEntry entry, string video, BitmapSource preview)
+    {
+        if (!entry.IsVideo || !File.Exists(video) || new FileInfo(video).Length == 0) throw new ArgumentException("録画ファイルがありません。");
+        Directory.CreateDirectory(Folder(entry));
+        // The item is ignored by Load until the MP4 exists. Publish metadata first, then
+        // move the finalized video on the same volume without duplicating a large file.
+        Save(entry, preview); File.Move(video, VideoPath(entry), false);
+    }
+    private void AttachThumbnail(CaptureEntry entry)
+    {
+        entry.SetThumbnailLoader(() => thumbnails.Get(Path.Combine(Folder(entry), "preview.png")));
+    }
+    public void Delete(CaptureEntry entry)
+    {
+        Directory.Delete(Folder(entry), true);
+        thumbnails.Remove(Path.Combine(Folder(entry), "preview.png"));
+        entry.SetThumbnailLoader(() => null);
+    }
     public static BitmapSource ReadImage(string path, int decodeWidth = 0)
     {
         using var stream = File.OpenRead(path);
