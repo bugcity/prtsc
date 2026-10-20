@@ -76,6 +76,8 @@ GIF / TIFF は先頭フレームの静止画として読み込みます。撮影
 
 通知やギャラリーから編集を開くときは、編集画面を表示・アクティブ化してから元の画面を閉じるか隠します。最小化からの復元、[Windows の前面表示 API](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow)、レイアウト後のフォーカス処理を共通化しています。編集画面を常に最前面に固定する設定は使用しません。
 
+最小化でトレイに格納する際は、非表示にしてから最小化状態を解除し、通常表示または最大化の状態を保持します。編集を再開するときは、タスクバーに再表示する前に状態を復元し、Windows 側に最小化が残っていれば [SW_RESTORE](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow) で復元します。
+
 `Assets/Prtsc.svg` はアイコンのベクター原稿、`Assets/Prtsc.ico` は16〜256pxの7サイズを含む Windows アイコンです。`tools/Build-Icon.ps1` で再生成できます。
 
 ## 検証

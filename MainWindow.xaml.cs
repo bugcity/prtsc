@@ -24,7 +24,8 @@ public partial class MainWindow : Window
     private TrayController? tray;
     private GalleryWindow? gallery;
     private CaptureToast? toast;
-    private bool closing, exitRequested, syncingSelection, moving;
+    private bool closing, exitRequested, syncingSelection, moving, restoringEditor;
+    private WindowState lastEditorState = WindowState.Normal;
     private int selectedIndex = -1;
     private string dragPart = "Move";
     private Point dragStart;
@@ -61,7 +62,12 @@ public partial class MainWindow : Window
                 StatusLabel.Text = "PrtSc が競合しています。左の撮影ボタンを使えます。";
             }
         };
-        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized && tray is not null) HideToTray(); };
+        StateChanged += (_, _) =>
+        {
+            if (restoringEditor) return;
+            if (WindowState == WindowState.Minimized && tray is not null) HideToTray();
+            else if (IsVisible && WindowState != WindowState.Minimized) lastEditorState = WindowState;
+        };
         Closing += (_, e) =>
         {
             if (exitRequested) return;
@@ -141,10 +147,23 @@ public partial class MainWindow : Window
     private void ShowEditor()
     {
         if (closing) return;
-        ShowInTaskbar = true;
-        WindowActivation.Show(this);
+        restoringEditor = true;
+        try
+        {
+            // Restore while still hidden, before changing taskbar ownership or showing the HWND.
+            if (WindowState == WindowState.Minimized) WindowState = lastEditorState;
+            ShowInTaskbar = true;
+            WindowActivation.Show(this);
+        }
+        finally { restoringEditor = false; }
     }
-    private void HideToTray() { Hide(); ShowInTaskbar = false; }
+    internal void HideToTray()
+    {
+        if (WindowState != WindowState.Minimized) lastEditorState = WindowState;
+        Hide(); ShowInTaskbar = false;
+        // A tray-hidden window must not retain a minimized show state for the next gallery edit.
+        if (WindowState == WindowState.Minimized) WindowState = lastEditorState;
+    }
     private void ShowGallery()
     {
         if (capturing || closing || !IsEnabled) return;

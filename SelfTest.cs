@@ -146,6 +146,17 @@ internal static class SelfTest
             Check(doc.Undo() && edited.Marks[0].X2 == 90 && doc.Redo() && edited.Marks[0].X2 == 200, "Resize edits must support undo and redo");
             using var trayIcon = AppIcon.CreateTrayIcon(); Check(trayIcon.Width == 32, "Tray icon resource must contain a 32px icon");
             Check(surface.ActualWidth == 1280, "Main window layout failed");
+            foreach (var state in new[] { WindowState.Normal, WindowState.Maximized })
+            {
+                window.WindowState = state; window.HideToTray();
+                for (int cycle = 0; cycle < 3; cycle++)
+                {
+                    window.WindowState = WindowState.Minimized; window.HideToTray();
+                    Check(!window.IsVisible && !window.ShowInTaskbar && window.WindowState == state,
+                        "Repeated minimize-to-tray must retain a restored state for gallery editing, including maximized editors");
+                }
+            }
+            window.WindowState = WindowState.Normal;
             int closedCount = 0; window.Closed += (_, _) => closedCount++;
             window.Close();
             Check(closedCount == 0 && !window.IsVisible && !window.ShowInTaskbar, "Editor close must hide to tray instead of disposing the resident window");
@@ -164,6 +175,6 @@ internal static class SelfTest
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: editor close-to-tray and retained edit state, tray Exit command and idempotent shutdown, activation-before-toast-dismissal, 9 arrow styles and directional opacity, style persistence/Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
+        File.WriteAllText("self-test-result.txt", "PASS: repeated minimize-to-tray state restoration (normal/maximized), editor close-to-tray and retained edit state, tray Exit, activation-before-toast-dismissal, 9 arrow styles and directional opacity, style persistence/Undo/Redo, capture geometry, annotation re-editing, flattened clipboard output, gallery copy, dialog bounds, notification fade, icon resources, UI layouts, unlocked deletion.");
     }
 }

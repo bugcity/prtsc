@@ -18,17 +18,23 @@ internal static class WindowActivation
         // Finish layout and transfer focus after the originating notification/gallery has been dismissed.
         window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
-            if (window.IsVisible && window.IsEnabled && window.WindowState != WindowState.Minimized)
+            if (window.IsVisible && window.IsEnabled)
+            {
+                if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
                 Activate(window, handle);
+            }
         }));
     }
     private static void Activate(Window window, IntPtr handle)
     {
         if (handle == IntPtr.Zero) return;
+        if (IsIconic(handle)) ShowWindow(handle, 9); // SW_RESTORE: raising a minimized HWND alone does not restore it.
         SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x0043); // HWND_TOP, NOMOVE | NOSIZE | SHOWWINDOW
         SetForegroundWindow(handle);
         window.Activate(); window.Focus();
     }
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr handle);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr handle, int command);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
 }
