@@ -60,10 +60,16 @@ internal sealed class RegionWindow : Window
         grid.Children.Add(new Border { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(20, 32, 20, 0), Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 29, 45)), CornerRadius = new CornerRadius(10), Padding = new Thickness(22, 13, 22, 13), IsHitTestVisible = false, Child = hint });
         Content = grid;
         UpdateHint();
+        SourceInitialized += (_, _) =>
+        {
+            // Size the still-hidden HWND before WPF's first show. Showing it from
+            // Loaded exposes the default-sized black surface for an initial frame.
+            var b = desktopBounds;
+            SetWindowPos(new WindowInteropHelper(this).Handle, new IntPtr(-1), b.X, b.Y, b.Width, b.Height, 0x0010); // SWP_NOACTIVATE; never SWP_SHOWWINDOW
+        };
         Loaded += (_, _) =>
         {
             var b = desktopBounds;
-            SetWindowPos(new WindowInteropHelper(this).Handle, new IntPtr(-1), b.X, b.Y, b.Width, b.Height, 0x0040);
             Activate(); Focus();
             UpdateLayout();
             var cursor = System.Windows.Forms.Cursor.Position;

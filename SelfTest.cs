@@ -10,6 +10,7 @@ internal static class SelfTest
     public static void Run()
     {
         static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+        CaptureOverlayTests.Run();
         var rect = RegionWindow.PixelRect(new System.Windows.Point(150, 80), new System.Windows.Point(20, 10), 200, 100, 400, 200);
         Check(rect == new Int32Rect(40, 20, 260, 140), "Reverse drag must preserve pixel coordinates at 200% DPI");
         rect = RegionWindow.PixelRect(new System.Windows.Point(-40, -10), new System.Windows.Point(250, 110), 200, 100, 400, 200);
