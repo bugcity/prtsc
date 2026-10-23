@@ -140,13 +140,14 @@ public partial class MainWindow : Window
             if (closing) return;
             var targets = mode == CaptureMode.FullScreen ? [] : await WindowCapture.EnumerateTargetsAsync();
             if (closing) return;
-            var desktop = CaptureService.Desktop();
-            BitmapSource? result = desktop;
+            BitmapSource? result = null;
             string? windowTitle = null;
-            if (mode != CaptureMode.FullScreen)
+            if (mode == CaptureMode.FullScreen) result = CaptureService.Desktop();
+            else
             {
-                var overlay = new RegionWindow(desktop, targets, mode == CaptureMode.Window);
-                overlay.ShowDialog(); result = overlay.Result; windowTitle = overlay.SelectedTitle;
+                var overlay = new RegionWindow(targets, mode == CaptureMode.Window);
+                if (overlay.ShowDialog() == true && overlay.SelectedScreenBounds is { } area && !closing)
+                { result = await CaptureService.AfterSelectionAsync(area); windowTitle = overlay.SelectedTitle; }
             }
             if (closing) return;
             if (result != null)

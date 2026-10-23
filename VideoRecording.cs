@@ -32,14 +32,15 @@ public partial class MainWindow
             var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
             var targets = dialog.Mode.SelectedIndex == 0 ? await WindowCapture.EnumerateTargetsAsync() : [];
             if (exitAfterRecording) return;
-            var desktop = CaptureService.Desktop(); BitmapSource thumbnail = desktop;
+            BitmapSource thumbnail;
             if (dialog.Mode.SelectedIndex == 0)
             {
-                var selector = new RegionWindow(desktop, targets); recordingSetup = selector;
-                if (selector.ShowDialog() != true || selector.SelectedBounds is not { } area || exitAfterRecording) return;
-                bounds = new System.Drawing.Rectangle(bounds.X + area.X, bounds.Y + area.Y, area.Width, area.Height); thumbnail = selector.Result!;
+                var selector = new RegionWindow(targets); recordingSetup = selector;
+                if (selector.ShowDialog() != true || selector.SelectedScreenBounds is not { } area || exitAfterRecording) return;
+                bounds = area; thumbnail = await CaptureService.AfterSelectionAsync(bounds);
                 recordingSetup = null;
             }
+            else thumbnail = CaptureService.Desktop();
             if (exitAfterRecording) return;
             bounds = RecordingRequest.EvenBounds(bounds);
             var request = new RecordingRequest(bounds, dialog.SystemAudio.IsChecked == true, dialog.Microphone.IsChecked == true, dialog.MouseActions.IsChecked == true);

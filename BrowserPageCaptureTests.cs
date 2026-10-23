@@ -45,7 +45,7 @@ internal static class BrowserPageCaptureTests
         var desktop = System.Windows.Forms.SystemInformation.VirtualScreen;
         var original = System.Windows.Media.Imaging.BitmapSource.Create(640, 360, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[640 * 360 * 4], 640 * 4);
         var target = new WindowTarget(new IntPtr(7), "Test browser", new(desktop.X + 10, desktop.Y + 10, 620, 340), [new(desktop.X + 20, desktop.Y + 80, 600, 260)]);
-        var overlay = new RegionWindow(original, [target]);
+        var overlay = new RegionWindow([target], bounds: new(desktop.X, desktop.Y, 640, 360), sampleReader: _ => original);
         var content = (FrameworkElement)overlay.Content; content.Measure(new System.Windows.Size(640, 360)); content.Arrange(new Rect(0, 0, 640, 360)); content.UpdateLayout();
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
         typeof(RegionWindow).GetMethod("Hover", flags)!.Invoke(overlay, [new System.Windows.Point(100, 150)]);

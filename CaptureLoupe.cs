@@ -13,10 +13,11 @@ internal sealed class CaptureLoupe : Border
     private readonly TextBlock label = new() { Foreground = Brushes.White, Margin = new Thickness(6), TextAlignment = TextAlignment.Center, FontSize = 12 };
     private readonly Line horizontal = new() { X1 = 0, X2 = 125, Stroke = Brushes.Red, StrokeThickness = 1 };
     private readonly Line vertical = new() { Y1 = 0, Y2 = 125, Stroke = Brushes.Red, StrokeThickness = 1 };
+    private readonly Grid view = new() { Width = 125, Height = 125, Visibility = Visibility.Collapsed };
     internal CaptureLoupe()
     {
         Background = Brushes.Black; BorderBrush = Brushes.White; BorderThickness = new Thickness(1); IsHitTestVisible = false;
-        var stack = new StackPanel(); var view = new Grid { Width = 125, Height = 125 };
+        var stack = new StackPanel();
         view.Children.Add(image); var cross = new Canvas { IsHitTestVisible = false }; cross.Children.Add(horizontal); cross.Children.Add(vertical); view.Children.Add(cross);
         stack.Children.Add(view); stack.Children.Add(label); Child = stack;
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
@@ -32,9 +33,21 @@ internal sealed class CaptureLoupe : Border
         int x = Math.Clamp((int)Math.Floor(point.X / width * source.PixelWidth), 0, source.PixelWidth - 1);
         int y = Math.Clamp((int)Math.Floor(point.Y / height * source.PixelHeight), 0, source.PixelHeight - 1);
         var sample = SampleRect(x, y, source.PixelWidth, source.PixelHeight);
-        image.Source = new CroppedBitmap(source, sample);
-        vertical.X1 = vertical.X2 = (x - sample.X + 0.5) * 125 / sample.Width;
-        horizontal.Y1 = horizontal.Y2 = (y - sample.Y + 0.5) * 125 / sample.Height;
+        UpdateSample(new CroppedBitmap(source, sample), x - sample.X, y - sample.Y);
+        UpdateLabel(point, width, height, source.PixelWidth, source.PixelHeight, selection, monitor);
+    }
+    internal void UpdateSample(BitmapSource source, int x, int y)
+    {
+        image.Source = source; view.Visibility = Visibility.Visible;
+        vertical.X1 = vertical.X2 = (x + 0.5) * 125 / source.PixelWidth;
+        horizontal.Y1 = horizontal.Y2 = (y + 0.5) * 125 / source.PixelHeight;
+    }
+    internal void ClearSample() { image.Source = null; view.Visibility = Visibility.Collapsed; }
+    internal void UpdateLabel(Point point, double width, double height, int pixelsX, int pixelsY, Int32Rect selection, Rect? monitor = null)
+    {
+        if (width <= 0 || height <= 0) return;
+        int x = Math.Clamp((int)Math.Floor(point.X / width * pixelsX), 0, pixelsX - 1);
+        int y = Math.Clamp((int)Math.Floor(point.Y / height * pixelsY), 0, pixelsY - 1);
         label.Text = selection.IsEmpty ? $"X:{x} Y:{y}" : $"{selection.Width} × {selection.Height} px";
         var available = monitor ?? new Rect(0, 0, width, height);
         double left = point.X + 24, top = point.Y + 24;

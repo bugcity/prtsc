@@ -24,6 +24,13 @@ public partial class App : System.Windows.Application
         System.Windows.Media.RenderOptions.ProcessRenderMode = preferences.RenderingMethod == "Automatic"
             ? System.Windows.Interop.RenderMode.Default : System.Windows.Interop.RenderMode.SoftwareOnly;
         base.OnStartup(e);
+        if (e.Args.Contains("--live-capture-self-test"))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            try { CaptureOverlayTests.Run(); CaptureOverlayTests.RunLive(); System.IO.File.WriteAllText("self-test-live-capture-result.txt", "PASS: transparent live selection, current pixels after selection, bounded loupe samples and timer cleanup."); Shutdown(0); }
+            catch (Exception ex) { System.IO.File.WriteAllText("self-test-live-capture-error.txt", ex.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Contains("--recording-self-test"))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
