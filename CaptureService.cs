@@ -45,6 +45,7 @@ internal static class CaptureService
 internal sealed class RegionWindow : Window
 {
     private readonly Canvas surface = new();
+    private readonly Rectangle selectionOutline = new() { Stroke = Brushes.Black, StrokeThickness = 4, IsHitTestVisible = false };
     private readonly Rectangle selection = new() { Stroke = Brushes.White, StrokeThickness = 2, Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(25, 99, 102, 241)) };
     private readonly IReadOnlyList<WindowTarget> targets;
     private readonly System.Drawing.Rectangle desktopBounds;
@@ -76,7 +77,8 @@ internal sealed class RegionWindow : Window
         // presenting the real applications underneath it.
         ShowInTaskbar = false; Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(1, 0, 0, 0)); Cursor = System.Windows.Input.Cursors.Cross;
         var grid = new Grid();
-        grid.Children.Add(surface); surface.Background = Brushes.Transparent; surface.Children.Add(selection);
+        grid.Children.Add(surface); surface.Background = Brushes.Transparent;
+        surface.Children.Add(selectionOutline); surface.Children.Add(selection);
         surface.Children.Add(loupe);
         grid.Children.Add(new Border { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(20, 32, 20, 0), Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 29, 45)), CornerRadius = new CornerRadius(10), Padding = new Thickness(22, 13, 22, 13), IsHitTestVisible = false, Child = hint });
         Content = grid;
@@ -162,14 +164,9 @@ internal sealed class RegionWindow : Window
     {
         hovered = FindTarget(point);
         var rect = hovered is null ? Int32Rect.Empty : WindowCapture.CropBounds(hovered.Bounds, desktopBounds);
-        selection.Visibility = rect.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
-        if (!rect.IsEmpty)
-        {
-            Canvas.SetLeft(selection, rect.X * surface.ActualWidth / desktopBounds.Width);
-            Canvas.SetTop(selection, rect.Y * surface.ActualHeight / desktopBounds.Height);
-            selection.Width = rect.Width * surface.ActualWidth / desktopBounds.Width;
-            selection.Height = rect.Height * surface.ActualHeight / desktopBounds.Height;
-        }
+        ShowSelection(rect.IsEmpty ? Rect.Empty : new Rect(rect.X * surface.ActualWidth / desktopBounds.Width,
+            rect.Y * surface.ActualHeight / desktopBounds.Height, rect.Width * surface.ActualWidth / desktopBounds.Width,
+            rect.Height * surface.ActualHeight / desktopBounds.Height));
         UpdateHint();
         UpdateLoupe(point, rect);
     }
@@ -183,11 +180,20 @@ internal sealed class RegionWindow : Window
     }
     private void Update(Point end)
     {
-        selection.Visibility = Visibility.Visible;
-        Canvas.SetLeft(selection, Math.Min(start.X, end.X)); Canvas.SetTop(selection, Math.Min(start.Y, end.Y));
-        selection.Width = Math.Abs(end.X - start.X); selection.Height = Math.Abs(end.Y - start.Y);
+        ShowSelection(new Rect(start, end));
         var rect = PixelRect(start, end, surface.ActualWidth, surface.ActualHeight, desktopBounds.Width, desktopBounds.Height);
         UpdateLoupe(end, rect);
+    }
+    private void ShowSelection(Rect bounds)
+    {
+        // Share the exact geometry: contrast must never change the captured area.
+        foreach (var frame in new[] { selectionOutline, selection })
+        {
+            frame.Visibility = bounds.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
+            if (bounds.IsEmpty) continue;
+            Canvas.SetLeft(frame, bounds.X); Canvas.SetTop(frame, bounds.Y);
+            frame.Width = bounds.Width; frame.Height = bounds.Height;
+        }
     }
     private void UpdateLoupe(Point point, Int32Rect rect)
     {
