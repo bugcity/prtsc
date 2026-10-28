@@ -13,6 +13,19 @@ internal static class LibraryFeaturesTests
         static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
         var store = new CaptureStore(Path.Combine(root, "captures"));
         var settingsStore = new CaptureSettingsStore(Path.Combine(store.Root, "settings.json"));
+        Check(settingsStore.Load().NotificationSeconds == 3, "Missing preferences must retain the three-second notification default");
+        settingsStore.Save(new() { NotificationSeconds = 12 });
+        Check(settingsStore.Load().NotificationSeconds == 12, "Notification duration must survive reloading preferences");
+        settingsStore.Save(new() { NotificationSeconds = 0 });
+        Check(settingsStore.Load().NotificationSeconds == 0, "Disabled notifications must survive restarting");
+        bool badNotification = false;
+        try { settingsStore.Save(new() { NotificationSeconds = -1 }); } catch (ArgumentOutOfRangeException) { badNotification = true; }
+        Check(badNotification && settingsStore.Load().NotificationSeconds == 0, "Invalid notification values must not overwrite preferences");
+        File.WriteAllText(Path.Combine(store.Root, "settings.json"), "{}");
+        Check(settingsStore.Load().NotificationSeconds == 3, "Existing settings without notification duration must default to three seconds");
+        File.WriteAllText(Path.Combine(store.Root, "settings.json"), "{\"NotificationSeconds\":61}");
+        Check(settingsStore.Load().NotificationSeconds == 3, "Out-of-range stored notification duration must fall back safely");
+        settingsStore.Save(new());
         var window = new MainWindow(store, _ => Task.CompletedTask, false);
         var captures = Enumerable.Range(1, 4).Select(i => window.AddCapture(image, "capture-" + i)).ToArray();
         Check(store.Load().Count == 4, "Default retention must preserve all captures");
@@ -58,6 +71,13 @@ internal static class LibraryFeaturesTests
             && !ThumbnailDrag.ShouldStart(new(0, 0), new(100, 100), false)
             && ThumbnailDrag.ShouldStart(new(0, 0), new(100, 100), true), "Thumbnail clicks and mouse releases must not accidentally begin a drag");
         var dialog = new SettingsDialog(0, 8);
+        Check(dialog.NotificationSeconds == 3, "Settings must display the default notification duration");
+        dialog.NotificationInput.Text = "0";
+        Check(dialog.NotificationSeconds == 0 && dialog.ApplyButton.IsEnabled, "Zero seconds must be a valid notification-off preference");
+        foreach (string invalidSeconds in new[] { "-1", "61", "abc", "1.5", "" })
+        { dialog.NotificationInput.Text = invalidSeconds; Check(!dialog.ApplyButton.IsEnabled, "Invalid notification duration must disable saving"); }
+        dialog.NotificationInput.Text = "12";
+        Check(dialog.NotificationSeconds == 12 && dialog.ApplyButton.IsEnabled, "Valid notification duration must re-enable saving");
         Check(dialog.Unlimited.IsChecked == true && dialog.Limit == 0, "Settings must display unlimited mode correctly");
         dialog.Unlimited.IsChecked = false; dialog.CountInput.Text = "3";
         Check(dialog.Limit == 3 && dialog.Summary.Text.Contains("5 枚") && dialog.ApplyButton.IsEnabled, "Settings must disclose how many existing captures will be removed");

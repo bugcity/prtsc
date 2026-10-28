@@ -137,7 +137,8 @@ internal static class SelfTest
             });
             toast.Closed += (_, _) => toastDismissed = true;
             Preview((FrameworkElement)toast.Content, 326, 240, "toast-preview.png");
-            toast.OpenEditor(); toast.OpenEditor(); Check(opened == 1 && CaptureToast.Lifetime == TimeSpan.FromSeconds(3), "Capture notification must open editing only once and fade over three seconds");
+            toast.OpenEditor(); toast.OpenEditor(); Check(opened == 1 && toast.Lifetime == TimeSpan.FromSeconds(3), "Capture notification must open editing only once and default to three seconds");
+            Check(CaptureToast.Create(edited, true, () => opened++, 0) is null && opened == 1, "Zero seconds must skip creating a notification and must not activate the editor");
             static void Pump(int milliseconds)
             {
                 var frame = new System.Windows.Threading.DispatcherFrame();
@@ -145,10 +146,10 @@ internal static class SelfTest
                 timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; }; timer.Start();
                 System.Windows.Threading.Dispatcher.PushFrame(frame);
             }
-            var fading = new CaptureToast(edited, true, () => { }); bool expired = false;
-            fading.Closed += (_, _) => expired = true; fading.StartFade(); Pump(1500);
+            var fading = new CaptureToast(edited, true, () => { }, 1); bool expired = false;
+            fading.Closed += (_, _) => expired = true; fading.StartFade(); Pump(500);
             Check(fading.Opacity > 0.2 && fading.Opacity < 0.8, "Capture preview opacity must decrease gradually halfway through the fade");
-            Pump(1800); Check(expired, "Capture preview must close after the three-second fade");
+            Pump(800); Check(expired, "Capture preview must close after the configured one-second fade");
             var doc = new AnnotationDocument(edited);
             var previous = edited.Marks[3]; var moved = AnnotationDocument.Move(previous, new Vector(20, -10));
             doc.Change(list => list[3] = moved);

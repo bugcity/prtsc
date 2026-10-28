@@ -17,6 +17,8 @@ internal sealed class SettingsDialog : Window
     public uint HotkeyKey { get; private set; }
     public bool StartWithWindows => startup.IsChecked == true;
     internal ComboBox RenderingInput { get; }
+    internal System.Windows.Controls.TextBox NotificationInput { get; }
+    public int NotificationSeconds { get; private set; }
     public string RenderingMethod => RenderingInput.SelectedIndex == 1 ? "Automatic" : "Software";
     private readonly CheckBox startup;
     public SettingsDialog(int currentLimit, int libraryCount, CaptureSettings? preferences = null)
@@ -52,18 +54,33 @@ internal sealed class SettingsDialog : Window
         RenderingInput = new ComboBox { Margin = new Thickness(0, 8, 0, 6), ItemsSource = new[] { "ソフトウェア（既定・省メモリ）", "ハードウェア優先（自動判定）" }, SelectedIndex = preferences.RenderingMethod == "Automatic" ? 1 : 0 };
         panel.Children.Add(RenderingInput);
         panel.Children.Add(new TextBlock { Text = "描画方法はアプリの再起動後に反映されます。", Foreground = Brushes.SlateGray, Margin = new Thickness(0, 0, 0, 14) });
+        panel.Children.Add(new TextBlock { Text = "撮影後の通知", FontWeight = FontWeights.SemiBold });
+        var notificationRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 6) };
+        NotificationInput = new System.Windows.Controls.TextBox { Text = preferences.NotificationSeconds.ToString(CultureInfo.InvariantCulture), Width = 100, Padding = new Thickness(8) };
+        notificationRow.Children.Add(NotificationInput);
+        notificationRow.Children.Add(new TextBlock { Text = "秒で消える", Margin = new Thickness(10, 0, 0, 0) }); panel.Children.Add(notificationRow);
+        var notificationHelp = new TextBlock { Text = "0〜60秒。0秒なら通知を表示しません。", Foreground = Brushes.SlateGray, Margin = new Thickness(0, 0, 0, 14) }; panel.Children.Add(notificationHelp);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(new System.Windows.Controls.Button { Content = "キャンセル", IsCancel = true });
         ApplyButton = new System.Windows.Controls.Button { Content = "保存して適用", Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(99, 102, 241)), Foreground = Brushes.White };
-        ApplyButton.Click += (_, _) => DialogResult = true; buttons.Children.Add(ApplyButton); panel.Children.Add(buttons); Content = panel;
+        ApplyButton.Click += (_, _) => DialogResult = true; buttons.Children.Add(ApplyButton);
+        // Keep actions visible when the settings body needs scrolling on a small display.
+        var layout = new DockPanel { MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height - 60) };
+        buttons.Margin = new Thickness(24, 0, 24, 24); DockPanel.SetDock(buttons, Dock.Bottom); layout.Children.Add(buttons);
+        layout.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }); Content = layout;
         void Update()
         {
             bool unlimited = Unlimited.IsChecked == true;
             bool valid = int.TryParse(CountInput.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int count) && count is > 0 and <= CaptureSettings.MaximumLimit;
-            CountInput.IsEnabled = !unlimited; ApplyButton.IsEnabled = unlimited || valid; Limit = unlimited ? 0 : count;
+            bool validNotification = int.TryParse(NotificationInput.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds)
+                && seconds is >= 0 and <= CaptureSettings.MaximumNotificationSeconds;
+            NotificationSeconds = validNotification ? seconds : preferences.NotificationSeconds;
+            notificationHelp.Text = validNotification ? "0〜60秒。0秒なら通知を表示しません。" : "通知時間は0〜60の整数を入力してください。";
+            notificationHelp.Foreground = validNotification ? Brushes.SlateGray : Brushes.Firebrick;
+            CountInput.IsEnabled = !unlimited; ApplyButton.IsEnabled = (unlimited || valid) && validNotification; Limit = unlimited ? 0 : count;
             Summary.Text = unlimited ? $"現在 {libraryCount} 枚。自動削除しません。" : !valid ? "1〜100,000 の整数を入力してください。"
                 : libraryCount > count ? $"適用すると、古い画像 {libraryCount - count} 枚を削除します。" : $"現在 {libraryCount} 枚。上限を超えた分を古い順に削除します。";
         }
-        Unlimited.Checked += (_, _) => Update(); Unlimited.Unchecked += (_, _) => Update(); CountInput.TextChanged += (_, _) => Update(); Update();
+        Unlimited.Checked += (_, _) => Update(); Unlimited.Unchecked += (_, _) => Update(); CountInput.TextChanged += (_, _) => Update(); NotificationInput.TextChanged += (_, _) => Update(); Update();
     }
 }

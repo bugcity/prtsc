@@ -163,10 +163,12 @@ public partial class MainWindow : Window
                     ShowEditor();
                 }
                 else HideToTray();
-                toast = new CaptureToast(entry, copied, () => OpenEntry(entry));
-                var activeToast = toast;
-                toast.Closed += (_, _) => { if (toast == activeToast) toast = null; };
-                toast.Show();
+                toast = CaptureToast.Create(entry, copied, () => OpenEntry(entry), settings.NotificationSeconds);
+                if (toast is { } activeToast)
+                {
+                    activeToast.Closed += (_, _) => { if (toast == activeToast) toast = null; };
+                    activeToast.Show();
+                }
             }
             else
             {
@@ -236,7 +238,7 @@ public partial class MainWindow : Window
         try
         {
             var dialog = new SettingsDialog(settings.MaxCaptures, entries.Count, settings) { Owner = gallery?.IsVisible == true ? gallery : this };
-            if (dialog.ShowDialog() == true) Run(() => ApplyApplicationSettings(settings with { MaxCaptures = dialog.Limit, HotkeyModifiers = dialog.HotkeyModifiers, HotkeyKey = dialog.HotkeyKey, StartWithWindows = dialog.StartWithWindows, RenderingMethod = dialog.RenderingMethod }));
+            if (dialog.ShowDialog() == true) Run(() => ApplyApplicationSettings(settings with { MaxCaptures = dialog.Limit, HotkeyModifiers = dialog.HotkeyModifiers, HotkeyKey = dialog.HotkeyKey, StartWithWindows = dialog.StartWithWindows, RenderingMethod = dialog.RenderingMethod, NotificationSeconds = dialog.NotificationSeconds }));
         }
         finally { settingsOpen = false; }
     }

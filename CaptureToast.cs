@@ -10,11 +10,15 @@ namespace Prtsc;
 
 internal sealed class CaptureToast : Window
 {
-    internal static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(3);
+    internal TimeSpan Lifetime { get; }
     private readonly Action edit;
     private bool opened, dismissed;
-    public CaptureToast(CaptureEntry entry, bool copied, Action openEditor)
+    internal static CaptureToast? Create(CaptureEntry entry, bool copied, Action openEditor, int seconds)
+        => seconds == 0 ? null : new CaptureToast(entry, copied, openEditor, seconds);
+    public CaptureToast(CaptureEntry entry, bool copied, Action openEditor, int seconds = 3)
     {
+        if (seconds < 1 || seconds > CaptureSettings.MaximumNotificationSeconds) throw new ArgumentOutOfRangeException(nameof(seconds));
+        Lifetime = TimeSpan.FromSeconds(seconds);
         edit = openEditor;
         Width = 326; Height = 240; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true; Background = Brushes.Transparent; ShowActivated = false; ShowInTaskbar = false; Topmost = true;
