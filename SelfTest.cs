@@ -109,6 +109,26 @@ internal static class SelfTest
             Check(dialog.FormatEditor is not null && dialog.TextFormat?.Size == 24, "Text entry must include editable formatting with existing defaults");
             dialog.FormatEditor!.SizeBox.SelectedItem = "36";
             Check(dialog.TextFormat?.Size == 48 && dialog.AcceptButton.IsEnabled, "The text entry dialog must return the chosen point size with the entered text");
+            Check(dialog.Input.FontSize == 48, "Text entry must use the selected point size without a preview cap");
+            var inputColor = dialog.Input.Foreground;
+            dialog.FormatEditor.FontBox.Text = "Consolas";
+            dialog.FormatEditor.SizeBox.SelectedItem = "72";
+            Check(dialog.Input.FontFamily.Source == "Consolas" && dialog.Input.FontSize == 96 && dialog.Input.Foreground.ToString() == inputColor.ToString(), "Font and size changes must update the input immediately without changing its selected color");
+            Check(dialog.FormatEditor.BackgroundBox.Text == "透明" && dialog.FormatEditor.BorderColorBox.Text == "透明", "Existing fully transparent colors must be shown as the explicit transparent choice");
+            dialog.FormatEditor.ColorBox.SelectedItem = "White";
+            dialog.FormatEditor.BackgroundBox.SelectedItem = "Black";
+            dialog.FormatEditor.BorderColorBox.SelectedItem = "#F43F5E";
+            dialog.FormatEditor.BorderWidthInput.Text = "4";
+            Check(dialog.TextColor == "White" && dialog.Input.Foreground.ToString() == Brushes.White.ToString() && dialog.Input.Background.ToString() == Brushes.Black.ToString() && dialog.Input.BorderBrush.ToString() == "#FFF43F5E" && dialog.Input.BorderThickness.Left == 4, "The input must immediately reproduce text color, background and border formatting");
+            dialog.FormatEditor.BackgroundBox.SelectedItem = "透明";
+            dialog.FormatEditor.BorderColorBox.SelectedItem = "透明";
+            Check(((SolidColorBrush)dialog.Input.Background).Color.A == 0 && ((SolidColorBrush)dialog.Input.BorderBrush).Color.A == 0 && ((SolidColorBrush)dialog.InputSurface.Background).Color.A == 255, "Transparent input colors must remain transparent over a separate opaque gray surface");
+            dialog.FormatEditor.ColorBox.Text = "invalid-color";
+            Check(!dialog.AcceptButton.IsEnabled, "Invalid text colors must prevent committing formatting");
+            dialog.FormatEditor.ColorBox.SelectedItem = "White";
+            dialog.FormatEditor.BackgroundBox.Text = "#80445566";
+            Check(((SolidColorBrush)dialog.Input.Background).Color.A == 128, "Partially transparent backgrounds must retain their alpha in the input");
+            dialog.FormatEditor.BackgroundBox.SelectedItem = "透明";
             dialog.FormatEditor.SizeBox.Text = "invalid";
             Check(!dialog.AcceptButton.IsEnabled, "Invalid text formatting must prevent adding or updating text");
             dialog.FormatEditor.SizeBox.SelectedItem = "18";
@@ -125,6 +145,8 @@ internal static class SelfTest
             Preview(dialogContent, 396, dialogHeight, "text-dialog-preview.png"); dialog.Close();
             var numberDialog = new TextDialog("3", showFormatting: false);
             Check(numberDialog.FormatEditor is null && numberDialog.AcceptButton.IsEnabled, "Number editing must preserve its separate sizing and text-only workflow"); numberDialog.Close();
+            var styledDialog = new TextDialog("既存の文字", new TextStyle { FontFamily = "Consolas", Size = 80 }, "White");
+            Check(styledDialog.Input.FontFamily.Source == "Consolas" && styledDialog.Input.FontSize == 80 && styledDialog.Input.Foreground.ToString() == Brushes.White.ToString(), "Reopened text must reproduce its saved font, size and white text color over gray"); styledDialog.Close();
             var gallery = new GalleryWindow(new System.Collections.ObjectModel.ObservableCollection<CaptureEntry>([edited]), window.CopyEntryAsync, _ => { }, () => { });
             var galleryContent = (FrameworkElement)gallery.Content;
             Preview(galleryContent, 780, 550, "gallery-preview.png");
@@ -191,6 +213,8 @@ internal static class SelfTest
             store.Delete(entry); Check(store.Load().Count == 0, "Deletion failed");
             LibraryFeaturesTests.Run(Path.Combine(root, "library-tests"), image);
             EditorPreferencesTests.Run(Path.Combine(root, "editor-tests"), image);
+            AnnotationGestureTests.Run(Path.Combine(root, "gesture-tests"), image);
+            TextApplyTests.Run(Path.Combine(root, "text-apply-tests"), image);
             CropAndZoomTests.Run(Path.Combine(root, "crop-tests"), image);
             EditingAndShellTests.Run(Path.Combine(root, "editing-shell-tests"), image);
             VideoRecordingTests.Run(Path.Combine(root, "video-tests"));
@@ -198,6 +222,6 @@ internal static class SelfTest
             BrowserPageCaptureTests.Run(Path.Combine(root, "browser-page-tests"));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        File.WriteAllText("self-test-result.txt", "PASS: browser page hit-testing/overlay, z-order and Alt fallback, stale bounds/iframe filtering, helper timeout/cleanup, software rendering defaults/persistence, lazy bounded thumbnails, 10,000-item gallery virtualization, full-session Undo and image release, recording setup/mute defaults, mouse 24/48px transitions, video persistence/drag/deletion and image/video selection, independent text styles and legacy compatibility, group editing/Undo/Redo, drawing preferences, hotkey/startup validation, single-instance wake, capture magnifier, zoom, lossless crop, clipboard/drag exports, compact toolbar, pen resizing, retention, tray restoration, arrow styles and notification fade.");
+        File.WriteAllText("self-test-result.txt", "PASS: editable straight lines and angle constraints, Shift selection/drag across drawing tools, input font/size and readable color, browser page hit-testing/overlay, z-order and Alt fallback, stale bounds/iframe filtering, helper timeout/cleanup, software rendering defaults/persistence, lazy bounded thumbnails, 10,000-item gallery virtualization, full-session Undo and image release, recording setup/mute defaults, mouse 24/48px transitions, video persistence/drag/deletion and image/video selection, independent text styles and legacy compatibility, group editing/Undo/Redo, drawing preferences, hotkey/startup validation, single-instance wake, capture magnifier, zoom, lossless crop, clipboard/drag exports, compact toolbar, pen resizing, retention, tray restoration, arrow styles and notification fade.");
     }
 }

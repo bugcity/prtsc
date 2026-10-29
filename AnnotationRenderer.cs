@@ -26,6 +26,8 @@ internal static class AnnotationRenderer
         FrameworkElement shape;
         switch (mark.Tool)
         {
+            case "Line":
+                shape = new Line { X1 = mark.X, Y1 = mark.Y, X2 = mark.X2, Y2 = mark.Y2, Stroke = brush, StrokeThickness = mark.Width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round }; break;
             case "Arrow":
                 shape = ArrowStyles.Create(mark);
                 break;

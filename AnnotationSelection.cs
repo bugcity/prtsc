@@ -8,7 +8,7 @@ namespace Prtsc;
 
 internal static class AnnotationSelection
 {
-    internal static bool HasEndpoints(Mark mark) => mark.Tool is "Arrow" or "Rectangle" or "Ellipse" or "Highlight" || mark.Tool == "Pen" && mark.Points.Count >= 2;
+    internal static bool HasEndpoints(Mark mark) => mark.Tool is "Line" or "Arrow" or "Rectangle" or "Ellipse" or "Highlight" || mark.Tool == "Pen" && mark.Points.Count >= 2;
     internal static Rect Bounds(Canvas canvas, int index)
     {
         var element = (FrameworkElement)canvas.Children[index + 1];
@@ -24,9 +24,10 @@ internal static class AnnotationSelection
             {
                 if (ArrowStyles.HitTest(marks[i], point)) return i;
             }
-            else if (marks[i].Tool == "Pen")
+            else if (marks[i].Tool is "Pen" or "Line")
             {
-                var points = marks[i].Points;
+                var mark = marks[i];
+                var points = mark.Tool == "Line" ? new List<double[]> { new[] { mark.X, mark.Y }, new[] { mark.X2, mark.Y2 } } : mark.Points;
                 for (int p = 1; p < points.Count; p++)
                 {
                     var a = new Point(points[p - 1][0], points[p - 1][1]);

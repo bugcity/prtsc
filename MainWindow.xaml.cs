@@ -37,11 +37,14 @@ public partial class MainWindow : Window
     private Dictionary<int, Mark>? dragSelection;
     private string dragPart = "Move";
     private Point dragStart;
+    private bool shiftSelecting, shiftDragged;
+    private int shiftToggleIndex = -1;
     private Mark? dragOriginal, selectionDraft;
     private CaptureEntry? current;
     private BitmapSource? original;
     private Mark? draft;
     private string tool = "Arrow", color = "#F43F5E";
+    private string? returnTool;
     private string arrowStyle = "Tapered";
     private bool capturing;
     private bool fitToView = true, cropping;
@@ -257,6 +260,7 @@ public partial class MainWindow : Window
     }
     private void HistoryChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (returnTool is { } previousTool) SetTool(previousTool);
         draft = null; moving = false; cropping = false; cropDraft = null; fitToView = true; selectionDraft = null; selectedIndex = -1; Editor.ReleaseMouseCapture();
         dragOriginal = null; dragSelection = null; original = null;
         Editor.Children.Clear(); VideoThumbnail.Source = null;
@@ -370,6 +374,7 @@ public partial class MainWindow : Window
     private void SetTool(string value)
     {
         CancelGesture();
+        returnTool = null;
         tool = value;
         if (value != "Select")
         {
@@ -395,6 +400,11 @@ public partial class MainWindow : Window
         SavePreferences(settings with { Color = color });
         ChangeSelected(mark => mark with { Color = color });
     }
+    private void SelectCreatedAnnotation(int index, string drawingTool)
+    {
+        SetTool("Select"); returnTool = drawingTool;
+        selectedIndex = index; UpdateSelectionControls();
+    }
     private Mark? SelectedMark => current is not null && selectedIndex >= 0 && selectedIndex < current.Marks.Count ? current.Marks[selectedIndex] : null;
     private void UpdateSelectionControls()
     {
@@ -403,7 +413,7 @@ public partial class MainWindow : Window
         EditTextButton.IsEnabled = selectedIndices.Count == 1 && (mark?.Tool is "Text" or "Number");
         DeleteMarkButton.IsEnabled = mark is not null;
         UpdateArrowControls();
-        SelectionLabel.Text = mark is null ? "Ctrl/Shift＋クリックで複数選択 · Ctrl+A ですべて選択" : $"{selectedIndices.Count} 件選択 · Ctrl+D 複製 · 矢印キーで移動（Shiftで10px）";
+        SelectionLabel.Text = mark is null ? "Shift＋クリックで選択 · Ctrl+A ですべて選択" : $"{selectedIndices.Count} 件選択 · Ctrl+D 複製 · 矢印キーで移動（Shiftで10px）";
         if (mark is null) return;
         syncingSelection = true;
         StrokeSlider.Value = mark.Width; color = mark.Color; CurrentColor.Fill = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString(color)!;
@@ -442,87 +452,146 @@ public partial class MainWindow : Window
     }
     private void BeginDraw(object sender, MouseButtonEventArgs e)
     {
+        BeginAnnotationGesture(Position(e), Keyboard.Modifiers, e.ClickCount);
+        e.Handled = true;
+    }
+    internal void BeginAnnotationGesture(Point point, ModifierKeys modifiers, int clickCount = 1)
+    {
         if (current is null || original is null || document is null) return;
-        var point = Position(e);
+        bool shift = (modifiers & ModifierKeys.Shift) != 0;
+        int hit = HitTestAnnotation(point);
+        bool atEndpoint = selectedIndices.Count == 1 && SelectedMark is { } selectedEndpoint && AnnotationSelection.HasEndpoints(selectedEndpoint)
+            && ((point - AnnotationDocument.Endpoints(selectedEndpoint).Start).Length <= 10 || (point - AnnotationDocument.Endpoints(selectedEndpoint).End).Length <= 10);
+        if (returnTool is { } previousTool && (shift ? hit < 0 && !atEndpoint : (modifiers & ModifierKeys.Control) == 0 && !selectedIndices.Contains(hit) && !atEndpoint))
+        {
+            SetTool(previousTool); return;
+        }
+        if (shift)
+        {
+            if (hit >= 0)
+            {
+                if (tool != "Select")
+                {
+                    string previous = tool; SetTool("Select"); returnTool = previous;
+                }
+                bool alreadySelected = selectedIndices.Contains(hit);
+                if (!alreadySelected) ToggleSelection(hit);
+                primaryIndex = hit;
+                shiftToggleIndex = alreadySelected ? hit : -1;
+                shiftSelecting = true; shiftDragged = false;
+                dragPart = "Move"; moving = true; dragStart = point;
+                dragOriginal = current.Marks[hit]; selectionDraft = dragOriginal;
+                dragSelection = selectedIndices.ToDictionary(i => i, i => current.Marks[i]);
+                UpdateSelectionControls(); Redraw(); Editor.CaptureMouse(); return;
+            }
+            // Blank Shift-clicks preserve selection; only the line tool starts a constrained drawing.
+            if (tool != "Line") return;
+        }
+        if (selectedIndices.Count > 0 && tool != "Select" && !(shift && tool == "Line")) SetTool(tool);
         if (tool == "Crop")
         {
-            cropStart = point; cropping = true; cropDraft = null; Editor.CaptureMouse(); e.Handled = true; return;
+            cropStart = point; cropping = true; cropDraft = null; Editor.CaptureMouse(); return;
         }
-        if (e.ClickCount == 2)
+        if (clickCount == 2 && !shift)
         {
             selectedIndex = HitTestAnnotation(point);
-            SetTool("Select"); UpdateSelectionControls(); Redraw();
-            if (SelectedMark?.Tool is "Text" or "Number") EditSelectedText(this, e);
-            e.Handled = true; return;
+            if (tool != "Select") SetTool("Select"); UpdateSelectionControls(); Redraw();
+            if (SelectedMark?.Tool is "Text" or "Number") EditSelectedText(this, new RoutedEventArgs());
+            return;
         }
         if (tool == "Select")
         {
             dragPart = "Move";
-            if (Keyboard.Modifiers is ModifierKeys.Control or ModifierKeys.Shift)
+            if ((modifiers & ModifierKeys.Control) != 0)
             {
-                ToggleSelection(HitTestAnnotation(point)); e.Handled = true; return;
+                ToggleSelection(HitTestAnnotation(point)); return;
             }
             if (selectedIndices.Count == 1 && SelectedMark is { } selected && AnnotationSelection.HasEndpoints(selected) && (point - AnnotationDocument.Endpoints(selected).Start).Length <= 10) dragPart = "Start";
             else if (selectedIndices.Count == 1 && SelectedMark is { } endMark && AnnotationSelection.HasEndpoints(endMark) && (point - AnnotationDocument.Endpoints(endMark).End).Length <= 10) dragPart = "End";
-            else { int hit = HitTestAnnotation(point); if (!selectedIndices.Contains(hit)) selectedIndex = hit; }
+            else { if (!selectedIndices.Contains(hit)) selectedIndex = hit; }
             UpdateSelectionControls(); Redraw();
             if (SelectedMark is not { } chosen) return;
             moving = true; dragStart = point; dragOriginal = chosen; selectionDraft = chosen;
             dragSelection = selectedIndices.ToDictionary(i => i, i => current.Marks[i]);
-            Editor.CaptureMouse(); e.Handled = true; return;
+            Editor.CaptureMouse(); return;
         }
         var mark = new Mark { Tool = tool, ArrowStyle = arrowStyle, Color = color, Width = StrokeSlider.Value, TextStyle = tool == "Text" ? settings.TextStyle : null, X = point.X, Y = point.Y, X2 = point.X, Y2 = point.Y };
+        if (shift && tool == "Line") mark = mark with { Color = settings.Color, Width = settings.StrokeWidth };
         if (tool == "Text")
         {
-            var result = AskText(initialStyle: settings.TextStyle, textColor: color);
-            if (result is null) return;
-            document.Change(marks => marks.Add(mark with { Text = result.Value.Text, TextStyle = result.Value.Style })); Commit(); return;
+            CreateTextDialog(mark).ShowDialog(); return;
         }
         if (tool == "Number")
         {
-            document.Change(marks => marks.Add(mark with { Text = (current.Marks.Count(m => m.Tool == "Number") + 1).ToString() })); Commit(); return;
+            document.Change(marks => marks.Add(mark with { Text = (current.Marks.Count(m => m.Tool == "Number") + 1).ToString() }));
+            SelectCreatedAnnotation(current.Marks.Count - 1, mark.Tool); Commit(); return;
         }
         draft = mark;
         if (tool == "Pen") draft.Points.Add([point.X, point.Y]);
-        Editor.CaptureMouse(); e.Handled = true;
+        Editor.CaptureMouse();
     }
     private void MoveDraw(object sender, System.Windows.Input.MouseEventArgs e)
+        => MoveAnnotationGesture(Position(e), Keyboard.Modifiers);
+    internal void MoveAnnotationGesture(Point point, ModifierKeys modifiers)
     {
         if (cropping && original is not null)
-        { cropDraft = ImageCrop.FromPoints(cropStart, Position(e), ImageCrop.Bounds(original, current?.Crop)); Redraw(); return; }
+        { cropDraft = ImageCrop.FromPoints(cropStart, point, ImageCrop.Bounds(original, current?.Crop)); Redraw(); return; }
         if (moving && dragOriginal is not null)
         {
-            selectionDraft = TransformSelection(Position(e));
+            if (shiftSelecting && !shiftDragged && (point - dragStart).Length * displayZoom < 3) return;
+            if (shiftSelecting) shiftDragged = true;
+            selectionDraft = TransformSelection(point);
             Redraw(); return;
         }
         if (draft is null) return;
-        var p = Position(e); draft = draft with { X2 = p.X, Y2 = p.Y };
+        var p = DrawingEndpoint(point, modifiers); draft = draft with { X2 = p.X, Y2 = p.Y };
         if (draft.Tool == "Pen") draft.Points.Add([p.X, p.Y]);
         Redraw();
     }
     private void EndDraw(object sender, MouseButtonEventArgs e)
     {
+        EndAnnotationGesture(Position(e), Keyboard.Modifiers); e.Handled = true;
+    }
+    internal void EndAnnotationGesture(Point point, ModifierKeys modifiers)
+    {
         if (cropping && original is not null)
         {
-            cropDraft = ImageCrop.FromPoints(cropStart, Position(e), ImageCrop.Bounds(original, current?.Crop));
-            cropping = false; Editor.ReleaseMouseCapture(); Redraw(); e.Handled = true; return;
+            cropDraft = ImageCrop.FromPoints(cropStart, point, ImageCrop.Bounds(original, current?.Crop));
+            cropping = false; Editor.ReleaseMouseCapture(); Redraw(); return;
         }
         if (moving && selectionDraft is not null && document is not null)
         {
-            var mark = TransformSelection(Position(e)); var delta = Position(e) - dragStart;
+            var mark = TransformSelection(point); var delta = point - dragStart;
+            bool wasShift = shiftSelecting;
+            bool dragged = shiftDragged || delta.Length * displayZoom >= 3;
+            int toggle = shiftToggleIndex;
+            shiftSelecting = shiftDragged = false; shiftToggleIndex = -1;
             moving = false; selectionDraft = null; Editor.ReleaseMouseCapture();
-            if (delta.Length >= 0.5) { document.Change(marks => { foreach (var pair in dragSelection!) marks[pair.Key] = dragPart == "Move" ? AnnotationDocument.Move(pair.Value, delta) : mark; }); Commit(); }
+            if ((!wasShift || dragged) && delta.Length >= 0.5) { document.Change(marks => { foreach (var pair in dragSelection!) marks[pair.Key] = dragPart == "Move" ? AnnotationDocument.Move(pair.Value, delta) : mark; }); Commit(); }
+            else if (wasShift && toggle >= 0) ToggleSelection(toggle);
             else Redraw();
             dragSelection = null; dragOriginal = null;
             return;
         }
         if (draft is null || current is null || document is null) return;
-        var p = Position(e); var completed = draft with { X2 = p.X, Y2 = p.Y }; draft = null; Editor.ReleaseMouseCapture();
+        var p = DrawingEndpoint(point, modifiers); var completed = draft with { X2 = p.X, Y2 = p.Y }; draft = null; Editor.ReleaseMouseCapture();
         if (completed.Tool == "Pen" && (completed.Points.Count == 0 || (new Point(completed.Points[^1][0], completed.Points[^1][1]) - p).Length > 0.01))
             completed.Points.Add([p.X, p.Y]);
         if (Math.Abs(completed.X2 - completed.X) + Math.Abs(completed.Y2 - completed.Y) >= 3 || completed.Points.Count > 2)
-        { document.Change(marks => marks.Add(completed)); Commit(); }
+        { document.Change(marks => marks.Add(completed)); SelectCreatedAnnotation(current.Marks.Count - 1, completed.Tool); Commit(); }
         else Redraw();
+    }
+    private Point DrawingEndpoint(Point point, ModifierKeys modifiers)
+    {
+        if (draft is not { Tool: "Line" } line || (modifiers & ModifierKeys.Shift) == 0 || original is null) return point;
+        var start = new Point(line.X, line.Y); var delta = point - start;
+        double angle = Math.Round(Math.Atan2(delta.Y, delta.X) / (Math.PI / 4)) * Math.PI / 4;
+        var direction = new Vector(Math.Cos(angle), Math.Sin(angle));
+        double length = Math.Max(0, Vector.Multiply(delta, direction));
+        var bounds = ImageCrop.Bounds(original, current?.Crop);
+        if (Math.Abs(direction.X) > 0.000001) length = Math.Min(length, (direction.X > 0 ? bounds.X + bounds.Width - start.X : bounds.X - start.X) / direction.X);
+        if (Math.Abs(direction.Y) > 0.000001) length = Math.Min(length, (direction.Y > 0 ? bounds.Y + bounds.Height - start.Y : bounds.Y - start.Y) / direction.Y);
+        return start + direction * length;
     }
     private Mark TransformSelection(Point position) => dragPart switch
     {
@@ -533,29 +602,55 @@ public partial class MainWindow : Window
     private void LostCapture(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (draft is null && !moving && !cropping) return;
+        shiftSelecting = shiftDragged = false; shiftToggleIndex = -1;
         draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null; dragSelection = null; Redraw();
     }
     private void CancelGesture()
     {
+        shiftSelecting = shiftDragged = false; shiftToggleIndex = -1;
         if (draft is null && !moving && !cropping && cropDraft is null) return;
         draft = null; moving = false; cropping = false; cropDraft = null; selectionDraft = null; dragOriginal = null; dragSelection = null;
         Editor.ReleaseMouseCapture(); Redraw();
     }
-    private (string Text, TextStyle? Style)? AskText(string initialText = "", TextStyle? initialStyle = null, string? textColor = null, bool showFormatting = true)
+    internal TextDialog CreateTextDialog(Mark source, int index = -1)
     {
-        var initial = initialStyle ?? settings.TextStyle;
-        var dialog = new TextDialog(initialText, initial, textColor ?? color, showFormatting) { Owner = this };
-        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Input.Text)) return null;
-        if (dialog.TextFormat is { } format && format != initial) SavePreferences(settings with { TextStyle = format });
-        return (dialog.Input.Text.Trim(), dialog.TextFormat);
+        if (current is null || document is null) throw new InvalidOperationException("編集する画像がありません。");
+        var target = current; var targetDocument = document;
+        var initial = source.TextStyle ?? new TextStyle { Size = Math.Max(18, source.Width * 6) };
+        bool Apply(TextDialog dialog)
+        {
+            bool success = false;
+            Run(() =>
+            {
+                if (current != target || document != targetDocument || !entries.Contains(target))
+                    throw new InvalidOperationException("編集対象の画像が変わりました。ダイアログを閉じて、もう一度開いてください。");
+                var style = source.TextStyle is null && dialog.TextFormat == initial ? null : dialog.TextFormat;
+                var updated = source with { Text = dialog.Input.Text.Trim(), TextStyle = style, Color = dialog.TextColor };
+                if (index < 0)
+                {
+                    index = target.Marks.Count; targetDocument.Change(marks => marks.Add(updated));
+                    SelectCreatedAnnotation(index, source.Tool);
+                }
+                else if (target.Marks[index] != updated) targetDocument.Change(marks => marks[index] = updated);
+                Redraw();
+                store.Save(target, AnnotationRenderer.Render(original!, target.Marks, target.Crop));
+                UpdateImageDetail(); StatusLabel.Text = "テキストを適用しました · 編集を続けられます";
+                if (dialog.TextFormat is { } format)
+                {
+                    var next = settings with { TextStyle = format, Color = dialog.TextColor };
+                    settingsStore.Save(next); settings = next;
+                    color = dialog.TextColor; CurrentColor.Fill = (Brush)new BrushConverter().ConvertFromString(color)!;
+                }
+                UpdateSelectionControls(); success = true;
+            });
+            return success;
+        }
+        return new TextDialog(index < 0 ? "" : source.Text, initial, source.Color, source.Tool == "Text", Apply) { Owner = this };
     }
     private void EditSelectedText(object sender, RoutedEventArgs e)
     {
         if (SelectedMark is not { } selected || document is null || selected.Tool is not ("Text" or "Number")) return;
-        var initial = selected.TextStyle ?? new TextStyle { Size = Math.Max(18, selected.Width * 6) };
-        var result = AskText(selected.Text, initial, selected.Color, selected.Tool == "Text"); if (result is null) return;
-        var style = selected.TextStyle is null && result.Value.Style == initial ? null : result.Value.Style;
-        document.Change(marks => marks[selectedIndex] = selected with { Text = result.Value.Text, TextStyle = style }); Commit();
+        CreateTextDialog(selected, selectedIndex).ShowDialog();
     }
     private void DeleteSelected(object sender, RoutedEventArgs e)
     {
@@ -647,10 +742,10 @@ public partial class MainWindow : Window
                 NudgeSelection(new Vector(e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0, e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0)); e.Handled = true; return;
             }
             if (Keyboard.Modifiers != ModifierKeys.None) return;
-            if (e.Key == Key.Escape) { CancelGesture(); selectedIndex = -1; if (tool == "Crop") SetTool("Select"); UpdateSelectionControls(); Redraw(); }
+            if (e.Key == Key.Escape) { CancelGesture(); selectedIndex = -1; if (returnTool is { } previousTool) SetTool(previousTool); else if (tool == "Crop") SetTool("Select"); UpdateSelectionControls(); Redraw(); }
             if (e.Key == Key.Enter && tool == "Crop") { ApplyCropClick(this, e); e.Handled = true; }
             if (e.Key == Key.Delete) { DeleteSelected(this, e); e.Handled = true; }
-            var value = e.Key switch { Key.V => "Select", Key.A => "Arrow", Key.R => "Rectangle", Key.E => "Ellipse", Key.P => "Pen", Key.H => "Highlight", Key.T => "Text", Key.N => "Number", Key.C => "Crop", _ => null };
+            var value = e.Key switch { Key.V => "Select", Key.A => "Arrow", Key.L => "Line", Key.R => "Rectangle", Key.E => "Ellipse", Key.P => "Pen", Key.H => "Highlight", Key.T => "Text", Key.N => "Number", Key.C => "Crop", _ => null };
             if (value is not null) SetTool(value);
         }
     }

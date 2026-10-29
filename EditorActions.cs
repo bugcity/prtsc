@@ -57,7 +57,7 @@ public partial class MainWindow
     }
     internal void SelectAllAnnotations()
     {
-        SetTool("Select"); selectedIndices.Clear();
+        if (tool != "Select") SetTool("Select"); selectedIndices.Clear();
         if (current is not null) foreach (int index in Enumerable.Range(0, current.Marks.Count)) selectedIndices.Add(index);
         primaryIndex = selectedIndices.Count == 0 ? -1 : selectedIndices.Max(); UpdateSelectionControls(); Redraw();
     }
@@ -114,12 +114,17 @@ public partial class MainWindow
     private void EditTextStyle(object sender, RoutedEventArgs e)
     {
         var initial = SelectedMark is { Tool: "Text" } mark ? mark.TextStyle ?? new TextStyle { Size = Math.Max(18, mark.Width * 6) } : settings.TextStyle;
-        var dialog = new TextStyleDialog(initial) { Owner = this };
-        if (dialog.ShowDialog() == true) ApplyTextStyle(dialog.TextFormat);
+        var dialog = new TextStyleDialog(initial, SelectedMark is { Tool: "Text" } text ? text.Color : color) { Owner = this };
+        if (dialog.ShowDialog() == true) ApplyTextStyle(dialog.TextFormat, dialog.TextColor);
     }
-    internal void ApplyTextStyle(TextStyle style)
+    internal void ApplyTextStyle(TextStyle style, string? textColor = null)
     {
-        style = style.Normalize(); SavePreferences(settings with { TextStyle = style });
-        ChangeSelected(mark => mark.Tool == "Text" ? mark with { TextStyle = style } : mark);
+        if (textColor is not null && !TextStyle.IsColor(textColor)) throw new ArgumentException("文字色を確認してください。", nameof(textColor));
+        style = style.Normalize(); SavePreferences(settings with { TextStyle = style, Color = textColor ?? settings.Color });
+        if (textColor is not null)
+        {
+            color = textColor; CurrentColor.Fill = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(color)!;
+        }
+        ChangeSelected(mark => mark.Tool == "Text" ? mark with { TextStyle = style, Color = textColor ?? mark.Color } : mark);
     }
 }

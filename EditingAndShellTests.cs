@@ -66,6 +66,12 @@ internal static class EditingAndShellTests
             window.SelectAnnotation(3); window.ToggleSelection(4);
             Click("注釈を削除"); Check(entry.Marks.Count == 3, "Delete must remove all selected annotations");
             Click("↶"); Check(entry.Marks.Count == 5, "Undo must restore a deleted group");
+            window.SelectAllAnnotations();
+            var originalColors = entry.Marks.Select(m => m.Color).ToArray();
+            window.ApplyTextStyle(style, "#0EA5E9");
+            Check(entry.Marks.Where(m => m.Tool == "Text").All(m => m.Color == "#0EA5E9") && entry.Marks.Where((m, i) => m.Tool != "Text" && m.Color != originalColors[i]).Count() == 0 && prefs.Load().Color == "#0EA5E9", "Text format color must update and persist only text colors in a mixed selection");
+            Check(store.Load()[0].Marks.Where(m => m.Tool == "Text").All(m => m.Color == "#0EA5E9"), "Text format colors must persist in editable library annotations");
+            Click("↶"); Check(entry.Marks.Select(m => m.Color).SequenceEqual(originalColors), "Text color and formatting changes must undo together");
             window.SelectAllAnnotations(); window.NudgeSelection(new Vector(1, 0)); Check(entry.Marks.All(m => m.X != 120), "Select all must include every annotation");
             Buttons((DependencyObject)window.Content).Single(b => b.Tag as string == "#10B981").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(entry.Marks.All(m => m.Color == "#10B981") && prefs.Load().Color == "#10B981", "Color changes must apply to the group and save defaults");

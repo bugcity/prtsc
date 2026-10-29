@@ -80,6 +80,7 @@
           <WrapPanel x:Name="Tools">
             <Button Tag="Select" Content="↖ 選択" Click="ChooseTool" ToolTip="V · 注釈の選択・移動・サイズ変更"/>
             <Button Tag="Arrow" Content="↗  矢印" Click="ChooseTool" ToolTip="A"/>
+            <Button Tag="Line" Content="／  直線" Click="ChooseTool" ToolTip="L · Shiftで水平・垂直・45度"/>
             <Button Tag="Rectangle" Content="▢  四角" Click="ChooseTool" ToolTip="R"/>
             <Button Tag="Ellipse" Content="○  丸" Click="ChooseTool" ToolTip="E"/>
             <Button Tag="Pen" Content="✎  ペン" Click="ChooseTool" ToolTip="P"/>
